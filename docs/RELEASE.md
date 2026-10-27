@@ -72,7 +72,7 @@ CREATE ROLE smartclinic_app LOGIN PASSWORD '…' IN ROLE sc_app;
 
 - [x] `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `pnpm test:int`, `pnpm db:verify`, web build — green
 - [x] Chromium E2E (journeys A/B desktop + mobile, staff/security, keyboard, axe, responsive incl. 640 px ≈ 200 % zoom) — green locally
-- [x] GitHub Actions: check, integration and e2e jobs (WebKit smoke reported separately)
+- [x] GitHub Actions run 40469309851: check, integration and e2e jobs green; E2E 7/7 on Chromium and 7/7 on WebKit (CI only — the development container has Chromium only)
 - [x] `docker compose config` valid; secrets only via `.env`; no automatic migrate/seed/reset
 - [x] Production guard: Secure cookies and https origin required when `NODE_ENV=production`
 - [ ] Demo seed executed on an approved demo database (pending approval)
@@ -86,5 +86,5 @@ CREATE ROLE smartclinic_app LOGIN PASSWORD '…' IN ROLE sc_app;
 
 - **Deferred SHOULD items:** waiting-room display (FR-QUE-017), receptionist no-phone exception (FR-QUE-020), doctor unavailable-today (FR-DOC-006), staff notification jobs (ADR-014), audit log screens (FR-AUD-004), patient correction/anonymise (FR-PAT-004), patient detail screen R-08, `.ics` calendar and printable QR poster, portal visit counters (FR-QR-006, COULD).
 - **Accepted dependency advisories (review before any hosted release):** `zod` 3.x memory-exhaustion advisory (fix requires the zod 4 major upgrade; request bodies are capped at 100 KB and contract arrays are length-limited), `deepmerge-ts` via the Prisma CLI config loader (build tooling, not the request path), and `react-router` 6.x open-redirect/SSR advisories (moderate; links are internal constants, no SSR). CI blocks critical advisories.
-- **Verification gaps:** WebKit coverage depends on the CI WebKit step (the development container had Chromium only); Lighthouse/LCP not measured; TC-QUE-009 latency checked per run, not as p95 over 20 runs; permission-matrix test generated for SC-1 capabilities, later capabilities covered by per-feature tests.
+- **Verification gaps:** WebKit verified in CI only (the WebKit step is non-blocking, so a future WebKit failure would not turn CI red); Lighthouse/LCP not measured; 200 % zoom approximated by a 640 px viewport; TC-QUE-009 latency checked per run, not as p95 over 20 runs; permission-matrix test generated for SC-1 capabilities, later capabilities covered by per-feature tests.
 - **Operational:** single API instance for SSE; Compose runs the API via `tsx` (development-style runtime) and connects as the database owner; no external messaging (by design).
