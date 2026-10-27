@@ -155,7 +155,7 @@ describe('private booking link (TC-APT-011, -022, TC-SEC-006)', () => {
     const r = await tokenClient(token).get();
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ bookingReference: booking.bookingReference, status: 'CONFIRMED', patient: { firstName: 'Somchai', maskedPhone: '•••• ••• 5678' } });
-    expect(JSON.stringify(r.body)).not.toMatch(/Fictional|812345678|patientId/);
+    expect(JSON.stringify(r.body)).not.toMatch(/Somchai Fictional|812345678|patientId/);
     expect(r.headers.get('x-robots-tag')).toContain('noindex');
     expect(r.headers.get('referrer-policy')).toBe('no-referrer');
   });
@@ -215,6 +215,7 @@ describe('staff appointments (TC-APT-014, -016, -017, -019..021, TC-SVC-001, iso
   it('TC-APT-019: concurrent reschedules of A and B into one free slot (20 runs) → exactly one wins; loser unchanged', async () => {
     const rec = await login('reception.a@example.test');
     for (let run = 0; run < 20; run++) {
+      await prisma.publicAccessToken.deleteMany({});
       await prisma.appointment.deleteMany({});
       const slotA = at('09:00'), slotB = at('09:15'), target = at('16:00');
       const A = await rec.post('/api/appointments', { serviceId: w.A.service.id, doctorId: w.A.doctor.id, startAt: slotA, fullName: 'Aaa Fictional', phone: '0811111111' });

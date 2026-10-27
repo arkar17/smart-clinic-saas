@@ -7,6 +7,12 @@ import { expireHolds, purgeIdempotency } from './modules/booking/index';
 
 const env = loadEnv();
 const log = createLogger(env.LOG_LEVEL);
+// Runs only where explicitly enabled (Docker Compose sets WORKER_ENABLED=true); never against a *_test database.
+const dbName = new URL(env.DATABASE_URL).pathname.slice(1);
+if (process.env.WORKER_ENABLED !== 'true' || env.NODE_ENV === 'test' || dbName.endsWith('_test')) {
+  log.error({ dbName }, 'Worker disabled: set WORKER_ENABLED=true and use a non-test database');
+  process.exit(1);
+}
 const prisma = new PrismaClient();
 
 function every(ms: number, name: string, job: () => Promise<unknown>) {

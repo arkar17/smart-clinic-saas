@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FullName, firstName, maskPhone, normalizeName } from '@sc/contracts';
+import { getExampleNumber } from 'libphonenumber-js';
+import examples from 'libphonenumber-js/mobile/examples';
 import { parsePhone, validatePatientIdentity } from './identity';
 
 describe('patient identity rules (BR-030, BR-031, BR-037, FR-PAT-002)', () => {
@@ -15,7 +17,11 @@ describe('patient identity rules (BR-030, BR-031, BR-037, FR-PAT-002)', () => {
   it('BR-031: parses with the clinic default region and stores E.164', () => {
     expect(parsePhone('081 234 5678', 'TH')).toBe('+66812345678');
     expect(parsePhone('+66 81 234 5678', 'GB')).toBe('+66812345678');
-    expect(parsePhone('07400 123456', 'GB')).toBe('+447400123456');
+    // TC-VAL-002 (IR-38): the GB fixture is the library's example mobile, not the reserved drama range +44 7700 900xxx.
+    const gb = getExampleNumber('GB', examples)!;
+    expect(parsePhone(gb.formatInternational(), 'TH')).toBe(gb.number);
+    expect(parsePhone('+44 7700 900123', 'GB')).toBeNull(); // reserved range stays invalid (BR-031 unchanged)
+    expect(parsePhone('0812345678999', 'TH')).toBeNull();
     expect(parsePhone('12345', 'TH')).toBeNull();
   });
   it('BR-037: name and valid phone are both mandatory', () => {
