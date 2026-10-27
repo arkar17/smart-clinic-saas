@@ -35,7 +35,7 @@ const view = (p: { id: string; fullName: string; phoneE164: string | null; sourc
 
 /** Staff retrieval and search (FR-PAT-003, FR-PAT-005, CAP-PAT-01). Appointment/queue history joins arrive with SC-2B/SC-3. */
 export function patientRoutes(deps: Deps): { patients: Router; search: Router } {
-  const { prisma } = deps;
+  const { prisma, clock } = deps;
   const patients = Router();
   const search = Router();
   const read = staffChain(deps, 'CAP-PAT-01', 'read');
@@ -44,7 +44,7 @@ export function patientRoutes(deps: Deps): { patients: Router; search: Router } 
     const ctx = req.clinic!;
     const id = uuidParam(req, 'id');
     // DR (ALLOW_OWN): only patients with an appointment for the doctor's own profile.
-    const own: Prisma.PatientWhereInput = grantOf(req) === 'OWN' ? { appointments: { some: { doctorId: ctx.doctorId ?? undefined } } } : {};
+    const own: Prisma.PatientWhereInput = grantOf(req) === 'OWN' ? { OR: [{ appointments: { some: { doctorId: ctx.doctorId ?? undefined } } }, { queueEntries: { some: { doctorId: ctx.doctorId ?? undefined } } }] } : {};
     if (grantOf(req) === 'OWN' && !ctx.doctorId) throw notFound();
     const p = await prisma.patient.findFirst({ where: { id, clinicId: ctx.clinicId, ...own } });
     if (!p) throw notFound();
@@ -53,7 +53,17 @@ export function patientRoutes(deps: Deps): { patients: Router; search: Router } 
       where: { clinicId: ctx.clinicId, patientId: p.id, status: { notIn: ['PENDING', 'EXPIRED'] }, ...(grantOf(req) === 'OWN' ? { doctorId: ctx.doctorId! } : {}) },
       include: { service: { select: { name: true } }, doctor: { select: { displayName: true } } }, orderBy: { startAt: 'desc' }, take: 100,
     });
-    res.json({ ...view(p), visits: visits.map((v) => ({ appointmentId: v.id, date: v.serviceDate.toISOString().slice(0, 10), startAt: v.startAt, service: v.service.name, doctor: v.doctor.displayName, source: v.channel, status: v.status, bookingReference: v.bookingReference })) });
+    const queueVisits = await prisma.queueEntry.findMany({
+      where: { clinicId: ctx.clinicId, patientId: p.id, appointmentId: null, ...(grantOf(req) === 'OWN' ? { doctorId: ctx.doctorId! } : {}) },
+      include: { service: { select: { name: true } }, doctor: { select: { displayName: true } } }, orderBy: { registeredAt: 'desc' }, take: 100,
+    });
+    res.json({
+      ...view(p),
+      visits: [
+        ...visits.map((v) => ({ appointmentId: v.id, queueEntryId: null as string | null, date: v.serviceDate.toISOString().slice(0, 10), service: v.service.name, doctor: v.doctor.displayName, source: v.channel, status: v.status, bookingReference: v.bookingReference })),
+        ...queueVisits.map((v) => ({ appointmentId: null as string | null, queueEntryId: v.id, date: v.serviceDate.toISOString().slice(0, 10), service: v.service.name, doctor: v.doctor.displayName, source: v.source, status: v.status, bookingReference: null })),
+      ].sort((a, b) => b.date.localeCompare(a.date)),
+    });
   }));
 
   search.get('/', ...read, h(async (req, res) => {
@@ -76,7 +86,15 @@ export function patientRoutes(deps: Deps): { patients: Router; search: Router } 
     const appointments = ref
       ? await prisma.appointment.findMany({ where: { clinicId: ctx.clinicId, bookingReference: ref, ...own }, select: { id: true, bookingReference: true, status: true, startAt: true, patientId: true } })
       : [];
-    res.json({ patients: rows.map(view), appointments });
+    // FR-PAT-003: today's queue token (1–3 digits, or zero-padded) in the selected clinic.
+    const tokenNo = /^\d{1,4}$/.test(q) ? Number(q) : null;
+    let queueEntries: { id: string; tokenNumber: number; status: string; patientId: string }[] = [];
+    if (tokenNo) {
+      const clinicTz = (await prisma.clinic.findFirstOrThrow({ where: { id: ctx.clinicId }, select: { timezone: true } })).timezone;
+      const today = new Date(`${new Intl.DateTimeFormat('en-CA', { timeZone: clinicTz }).format(clock.now())}T00:00:00Z`);
+      queueEntries = await prisma.queueEntry.findMany({ where: { clinicId: ctx.clinicId, serviceDate: today, tokenNumber: tokenNo, ...own }, select: { id: true, tokenNumber: true, status: true, patientId: true } });
+    }
+    res.json({ patients: rows.map(view), appointments, queueEntries });
   }));
 
   return { patients, search };

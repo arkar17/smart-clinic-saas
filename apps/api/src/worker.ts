@@ -1,9 +1,11 @@
-// Separate worker process (ADR-013). SC-2B jobs: hold-expiry sweep (60 s) and idempotency purge (hourly).
+// Separate worker process (ADR-013): hold-expiry sweep (60 s), day close (5 min), event and idempotency purges (hourly).
+// Staff notification jobs (SCHEDULE_CONFLICTS_DETECTED, DOCTOR_UNAVAILABLE_REASSIGN, ADR-014) are deferred.
 import { loadEnv } from '@sc/config';
 import { PrismaClient } from './generated/prisma/index.js';
 import { createLogger } from './infra/logger';
 import { systemClock } from './infra/clock';
 import { expireHolds, purgeIdempotency } from './modules/booking/index';
+import { closeDays } from './modules/queue/index';
 
 const env = loadEnv();
 const log = createLogger(env.LOG_LEVEL);
@@ -21,5 +23,7 @@ function every(ms: number, name: string, job: () => Promise<unknown>) {
   return setInterval(run, ms);
 }
 every(60_000, 'expire-holds', () => expireHolds(prisma, systemClock.now()));
+every(300_000, 'day-close', () => closeDays(prisma, systemClock.now())); // FR-QUE-016: within 5 min after local midnight
+every(3_600_000, 'purge-events', () => prisma.clinicEvent.deleteMany({ where: { createdAt: { lt: new Date(systemClock.now().getTime() - 86_400_000) } } }));
 every(3_600_000, 'purge-idempotency', () => purgeIdempotency(prisma, systemClock.now()));
 log.info('Smart Clinic worker started');

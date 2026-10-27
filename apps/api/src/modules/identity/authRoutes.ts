@@ -101,6 +101,7 @@ export function authRoutes(deps: Deps): Router {
       await tx.session.update({ where: { idHash: req.principal!.sessionIdHash }, data: { revokedAt: now, revokeReason: 'LOGOUT' } });
       await writeAudit(tx, req, now, { clinicId: req.principal!.activeClinicId, action: 'auth.logout', entityType: 'user', entityId: req.principal!.userId });
     });
+    deps.hub?.closeSession(req.principal!.sessionIdHash.toString('hex'));
     clearSessionCookie(res, deps);
     res.status(204).end();
   }));
@@ -120,7 +121,7 @@ export function authRoutes(deps: Deps): Router {
         changes: { fromClinicId: p.activeClinicId },
       });
     });
-    // SSE streams of this session are closed by the realtime hub once it exists (SC-3).
+    deps.hub?.closeSession(p.sessionIdHash.toString('hex')); // FR-SEC-002: open streams of this session close on switch
     res.json({ selectedClinicId: m.clinicId, roles: m.roles, doctorId: m.doctor?.id ?? null, csrfToken: csrfTokenFor(csrfSecret) });
   }));
 
@@ -139,6 +140,7 @@ export function authRoutes(deps: Deps): Router {
       await writeAudit(tx, req, now, { clinicId: p.activeClinicId, action: 'auth.password_changed', entityType: 'user', entityId: user.id, security: true });
       return s;
     });
+    deps.hub?.closeUser(user.id);
     setSessionCookie(res, deps, created.raw);
     res.json(await buildMe(deps, { ...p, mustChangePassword: false }, created.csrfSecret));
   }));

@@ -15,19 +15,25 @@ export const prisma = new PrismaClient();
 export const clock = new FixedClock(new Date('2026-11-02T03:00:00Z')); // Monday 10:00 in Bangkok
 
 let server: Server | undefined;
+export let deps: Parameters<typeof createApp>[0] | undefined;
+export const baseUrl = () => base;
 let base = '';
 export async function startApp() {
   const env = loadEnv({ ...process.env, IP_HASH_PEPPER: 'test-pepper-not-secret', COOKIE_SECURE: 'false', APP_ORIGIN: ORIGIN, LOG_LEVEL: 'silent', LOGIN_RATE_LIMIT_PER_10_MIN: '100000', PUBLIC_RATE_LIMIT_PER_MIN: '100000', HOLD_RATE_LIMIT_PER_MIN: '100000', TOKEN_FAILURE_LIMIT_PER_10_MIN: '100000', IDEMPOTENCY_ENC_KEY: Buffer.alloc(32, 7).toString('base64') });
-  const app = createApp({ prisma, clock, env, log: createLogger('silent') });
+  deps = { prisma, clock, env, log: createLogger('silent') };
+  const app = createApp(deps);
+  await deps.hub!.start(env.DATABASE_URL);
   server = app.listen(0);
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 export async function stopApp() {
+  await deps?.hub?.stop();
+  server?.closeAllConnections?.();
   await new Promise((r) => server?.close(r));
   await prisma.$disconnect();
 }
 
-const TABLES = ['audit_log', 'idempotency_record', 'public_access_token', 'appointment', 'patient', 'session', 'schedule_exception', 'doctor_availability', 'doctor_service', 'clinic_service', 'clinic_closure', 'clinic_business_hour', 'doctor', 'clinic_member', 'clinic', 'app_user'];
+const TABLES = ['audit_log', 'clinic_event', 'queue_entry', 'queue_counter', 'idempotency_record', 'public_access_token', 'appointment', 'patient', 'session', 'schedule_exception', 'doctor_availability', 'doctor_service', 'clinic_service', 'clinic_closure', 'clinic_business_hour', 'doctor', 'clinic_member', 'clinic', 'app_user'];
 /** Destroys fixtures created by the test runner in the disposable test database only. */
 export async function resetDb() {
   await prisma.$executeRawUnsafe(`TRUNCATE ${TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);

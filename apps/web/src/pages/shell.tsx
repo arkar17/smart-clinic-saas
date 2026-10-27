@@ -17,6 +17,8 @@ export function AppShell({ realm }: { realm: 'app' | 'platform' }) {
   const links = realm === 'platform'
     ? [{ to: '/platform', label: 'Clinics & accounts' }]
     : [
+        ...(hasRole(me, 'CLINIC_ADMIN', 'RECEPTIONIST') ? [{ to: '/app/queue', label: 'Queue' }] : []),
+        ...(me.doctorId ? [{ to: '/app/my-queue', label: 'My queue' }] : []),
         { to: '/app/appointments', label: 'Appointments' },
         ...(hasRole(me, 'CLINIC_ADMIN', 'RECEPTIONIST', 'DOCTOR') ? [{ to: '/app/settings', label: 'Settings' }] : []),
         ...(hasRole(me, 'CLINIC_ADMIN', 'RECEPTIONIST', 'DOCTOR') ? [{ to: '/app/hours', label: 'Hours & closures' }, { to: '/app/services', label: 'Services' }] : []),

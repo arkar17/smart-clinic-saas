@@ -1,8 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
+import { rateLimit } from '../../infra/ratelimit';
 import {
   AvailabilityDatesQuery, AvailabilitySlotsQuery, ConfirmRequest, EmptyRequest, HoldRequest, PublicServicesQuery, ReleaseRequest,
-  firstName, fromMinutes, maskPhone, type PublicBooking, type PublicClinic, type PublicService, type WalkInState,
+  firstName, fromMinutes, maskPhone, type PublicBooking, type PublicClinic, type PublicService,
 } from '@sc/contracts';
 import type { Prisma } from '../../generated/prisma/index.js';
 import { AppError, notFound } from '../../infra/errors';
@@ -15,6 +16,7 @@ import type { Deps } from '../../infra/context';
 import { writeAudit } from '../audit/index';
 import { findOrCreatePatient, validatePatientIdentity } from '../patients/index';
 import { clinicIntervals, type ClosureRow } from '../scheduling/index';
+import { REASON_TEXT, publicQueueStatus, walkInEligibility, walkInServices } from '../queue/index';
 import { assertSlot, bookingContext, computeSlots, expireStaleHolds, retryOnDeadlock } from './slots';
 import { bookingLinkExpiry, freshReference, issueBookingToken, privateBookingUrl } from './tokens';
 
@@ -22,31 +24,18 @@ export { assertSlot, bookingContext, computeSlots, expireStaleHolds, loadBusy, r
 export { bookingLinkExpiry, freshReference, issueBookingToken, privateBookingUrl } from './tokens';
 export { expireHolds, purgeIdempotency } from './jobs';
 
-type Clinic = Prisma.ClinicGetPayload<object>;
 const MAX_DATE_RANGE_DAYS = 92;
-/** Arch 17: interactive transactions with a 5 s timeout; waiting for a pooled connection may take longer under bursts. */
-export const TX = { maxWait: 10_000, timeout: 5_000 };
+export { TX } from '../../infra/db';
+import { TX } from '../../infra/db';
 const MAX_HOLDS_PER_IP = 5; // Arch 9 / BR-054
 const HOLD_COOKIE = 'sc_hold';
-
-function limiterMiddleware(points: number, duration: number, message: string) {
-  const limiter = new RateLimiterMemory({ points, duration });
-  return h(async (req, _res, next) => {
-    try {
-      await limiter.consume(req.ctx.ipHash?.toString('hex') ?? 'unknown');
-    } catch (e) {
-      throw new AppError('RATE_LIMITED', message, { retryAfterSec: Math.ceil(((e as { msBeforeNext?: number }).msBeforeNext ?? 60_000) / 1000) });
-    }
-    next();
-  });
-}
 
 /** Public clinic portal, booking discovery and reservations (FR-QR-004/005, FR-APT-001..008). No patient data in responses except the patient's own masked details. */
 export function publicRoutes(deps: Deps): Router {
   const r = Router();
   const { prisma, clock } = deps;
-  r.use(limiterMiddleware(deps.env.PUBLIC_RATE_LIMIT_PER_MIN, 60, 'Too many requests. Please wait.')); // FR-SEC-007
-  const holdLimiter = limiterMiddleware(deps.env.HOLD_RATE_LIMIT_PER_MIN, 60, 'Too many reservation attempts. Please wait.');
+  r.use(rateLimit(deps.env.PUBLIC_RATE_LIMIT_PER_MIN, 60, 'Too many requests. Please wait.')); // FR-SEC-007
+  const holdLimiter = rateLimit(deps.env.HOLD_RATE_LIMIT_PER_MIN, 60, 'Too many reservation attempts. Please wait.');
 
   /** Clinic from :slug; only ACTIVE clinics are public (404 otherwise, identical body). */
   const loadClinic = async (req: Request) => {
@@ -84,24 +73,25 @@ export function publicRoutes(deps: Deps): Router {
       bookableServices(c.id),
     ]);
     const intervals = clinicIntervals(today, hours, closures);
+    const walk = await walkInEligibility(prisma, c, now);
+    const walkServices = walk.eligible ? await walkInServices(prisma, c, now) : [];
     const fullDay = closures.find((x) => x.startMin === null);
     const body: PublicClinic = {
       slug: c.slug, name: c.name, address: c.address, contactPhone: c.contactPhoneE164, timezone: c.timezone,
       today: { date: today, intervals: intervals.map((i) => ({ start: fromMinutes(i.start), end: fromMinutes(i.end) })), ...(intervals.length ? {} : { closedLabel: fullDay?.label ?? 'Closed today' }) },
-      walkIn: walkInState(c, intervals, now),
+      walkIn: walk.state === 'DISABLED' ? { state: walk.state } : { state: walk.state, opensAt: walk.opensAt, closesAt: walk.closesAt },
       actions: {
         book: services.length ? { enabled: true } : { enabled: false, reason: 'No services are available for online booking at the moment.' },
-        // Same-day queue registration is delivered in SC-3; until then the action is shown as coming soon.
-        joinQueue: { enabled: false, reason: 'Joining the queue online is coming soon. Please ask at reception.' },
+        joinQueue: walk.eligible && walkServices.length ? { enabled: true } : { enabled: false, reason: REASON_TEXT[walk.reason ?? 'NO_SERVICE'] },
       },
     };
     res.json(body);
   }));
 
   r.get('/:slug/services', h(async (req, res) => {
-    parse(PublicServicesQuery, req.query);
+    const q = parse(PublicServicesQuery, req.query);
     const c = await loadClinic(req);
-    res.json({ timezone: c.timezone, items: await bookableServices(c.id) });
+    res.json({ timezone: c.timezone, items: q.mode === 'walk_in' ? await walkInServices(prisma, c, clock.now()) : await bookableServices(c.id) });
   }));
 
   r.get('/:slug/availability/dates', h(async (req, res) => {
@@ -273,7 +263,12 @@ export function privateBookingRoutes(deps: Deps): Router {
     };
   };
 
-  r.get('/', h(async (req, res) => res.json(view(await resolve(req, res)))));
+  // FR-APT-008: once checked in, the private page also shows the queue token and live status.
+  r.get('/', h(async (req, res) => {
+    const x = await resolve(req, res);
+    const entry = await prisma.queueEntry.findFirst({ where: { appointmentId: x.appointment.id, clinicId: x.clinic.id }, select: { id: true } });
+    res.json({ ...view(x), queue: entry ? await publicQueueStatus(prisma, entry.id) : null });
+  }));
 
   // AT-07 patient cancellation before the cutoff (BR-056).
   r.post('/cancel', h(async (req, res) => {
@@ -294,17 +289,4 @@ export function privateBookingRoutes(deps: Deps): Router {
   }));
 
   return r;
-}
-
-/** SRS 12.6 window: (first open + opens offset) … (last close − closes-before). FULL/PAUSED come with the SC-3 queue counter. */
-export function walkInState(c: Clinic, intervals: { start: number; end: number }[], now: Date): PublicClinic['walkIn'] {
-  if (!c.walkinEnabled) return { state: 'DISABLED' };
-  const first = intervals[0], last = intervals[intervals.length - 1];
-  if (!first || !last) return { state: 'CLOSED' };
-  const opens = first.start + c.walkinOpensOffsetMin;
-  const closes = last.end - c.walkinClosesBeforeMin;
-  const local = new Intl.DateTimeFormat('en-GB', { timeZone: c.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
-  const nowMin = Number(local.slice(0, 2)) * 60 + Number(local.slice(3, 5));
-  const state: WalkInState = nowMin < opens ? 'NOT_YET_OPEN' : nowMin >= closes ? 'CLOSED' : 'OPEN';
-  return { state, opensAt: fromMinutes(Math.max(0, opens)), closesAt: fromMinutes(Math.max(0, closes)) };
 }

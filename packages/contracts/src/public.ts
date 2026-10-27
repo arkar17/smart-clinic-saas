@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IsoDate, Uuid } from './common';
 
-export const PublicServicesQuery = z.object({ mode: z.literal('booking').default('booking') }).strict();
+export const PublicServicesQuery = z.object({ mode: z.enum(['booking', 'walk_in']).default('booking') }).strict();
 export const AvailabilityDatesQuery = z.object({ serviceId: Uuid, doctorId: Uuid, from: IsoDate.optional(), to: IsoDate.optional() }).strict();
 export const AvailabilitySlotsQuery = z.object({ serviceId: Uuid, doctorId: Uuid, date: IsoDate }).strict();
 

@@ -53,7 +53,21 @@
     "public_access_token_binding_check",
     "public_access_token_expiry_check",
     "public_access_token_appointment_fkey",
-    "idempotency_record_completed_check"
+    "idempotency_record_completed_check",
+    "queue_counter_values_check",
+    "queue_entry_token_check",
+    "queue_entry_recall_check",
+    "queue_entry_scheduled_check",
+    "queue_entry_registered_check",
+    "queue_entry_arrival_check",
+    "queue_entry_expired_check",
+    "queue_entry_counter_fkey",
+    "queue_entry_doctor_fkey",
+    "queue_entry_patient_fkey",
+    "queue_entry_appointment_fkey",
+    "public_access_token_queue_entry_fkey",
+    "clinic_event_doctor_fkey",
+    "clinic_event_queue_entry_fkey"
   ],
   "indexes": [
     "session_user_live_idx",
@@ -70,7 +84,10 @@
     "appointment_clinic_id_booking_reference_key",
     "public_access_token_one_booking",
     "public_access_token_one_queue",
-    "public_access_token_token_hash_key"
+    "public_access_token_token_hash_key",
+    "queue_entry_doctor_busy",
+    "queue_entry_clinic_id_service_date_token_number_key",
+    "queue_entry_appointment_id_key"
   ],
   "triggers": [
     {
@@ -80,6 +97,10 @@
     {
       "table": "appointment",
       "name": "appointment_status_guard"
+    },
+    {
+      "table": "queue_entry",
+      "name": "queue_status_guard"
     }
   ],
   "privileges": [
@@ -134,6 +155,12 @@
     {
       "role": "sc_app",
       "table": "idempotency_record",
+      "privilege": "INSERT",
+      "expected": true
+    },
+    {
+      "role": "sc_app",
+      "table": "clinic_event",
       "privilege": "INSERT",
       "expected": true
     }

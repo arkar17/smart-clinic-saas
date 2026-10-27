@@ -12,3 +12,4 @@ export * from './permissions';
 export * from './patients';
 export * from './public';
 export * from './appointments';
+export * from './queue';

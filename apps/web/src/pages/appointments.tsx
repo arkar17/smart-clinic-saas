@@ -32,6 +32,22 @@ export function AppointmentsPage() {
     if (!reason) return;
     try { await api('POST', `/appointments/${a.id}/cancel`, { reason, version: a.version }); reload(); } catch (e) { toast(messageOf(e), 'error'); }
   }
+  // R-06 check-in (FR-APT-012): allocates the queue token; outside the window a reason is required (A-019).
+  async function checkIn(a: Appt, overrideReason?: string) {
+    try {
+      const r = await api<{ queueEntry: { token: string } }>('POST', `/appointments/${a.id}/check-in`, { version: a.version, ...(overrideReason ? { overrideReason } : {}) });
+      toast(`Checked in — queue token ${r.queueEntry.token}`);
+      reload();
+    } catch (e) {
+      if ((e as { body?: { code?: string } }).body?.code === 'OVERRIDE_REASON_REQUIRED') {
+        const reason = window.prompt('Outside the check-in window. Operational reason for checking in:');
+        if (reason) return checkIn(a, reason);
+      } else toast(messageOf(e), 'error');
+    }
+  }
+  async function noShow(a: Appt) {
+    try { await api('POST', `/appointments/${a.id}/no-show`, { version: a.version }); reload(); } catch (e) { toast(messageOf(e), 'error'); }
+  }
   const columns = [
     { header: 'Time', cell: (a: Appt) => time(a.startAt) },
     { header: 'Patient', cell: (a: Appt) => <>{a.patient?.fullName}<div className="text-xs text-slate-500">{a.patient?.phone}</div></> },
@@ -39,7 +55,11 @@ export function AppointmentsPage() {
     { header: 'Reference', cell: (a: Appt) => <span className="font-mono text-xs">{a.bookingReference}</span> },
     { header: 'Status', cell: (a: Appt) => a.status.replace('_', ' ').toLowerCase() },
     { header: '', cell: (a: Appt) => canManage && a.status === 'CONFIRMED' && (
-      <div className="flex gap-1"><Button variant="secondary" onClick={() => setMoving(a)}>Reschedule</Button><Button variant="secondary" onClick={() => cancel(a)}>Cancel</Button></div>
+      <div className="flex flex-wrap gap-1">
+        <Button onClick={() => checkIn(a)}>Check in</Button>
+        <Button variant="secondary" onClick={() => setMoving(a)}>Reschedule</Button><Button variant="secondary" onClick={() => cancel(a)}>Cancel</Button>
+        <Button variant="secondary" onClick={() => noShow(a)}>No-show</Button>
+      </div>
     ) },
   ];
   const doctorOptions = [{ value: '', label: 'All doctors' }, ...(doctors.data?.items ?? []).map((d) => ({ value: d.id, label: d.displayName ?? '' }))];

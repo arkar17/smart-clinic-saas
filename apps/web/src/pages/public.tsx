@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { PublicBooking, PublicClinic, PublicService } from '@sc/contracts';
+import type { PublicBooking, PublicClinic, PublicQueueStatus, PublicService } from '@sc/contracts';
+import { QueueStatusCard } from './queuePublic';
 import { ApiError, api, get } from '../api';
 import { Button, EmptyState, ErrorState, Field, Loading, fieldsOf, messageOf, useResource } from '../components';
 
@@ -44,7 +45,8 @@ export function PortalPage() {
           {data.actions.book.reason && <p className="mt-1 text-sm text-slate-600">{data.actions.book.reason}</p>}
         </div>
         <div>
-          <Button disabled={!data.actions.joinQueue.enabled} className="w-full py-3">Join Today’s Queue</Button>
+          {data.actions.joinQueue.enabled ? <Link to={`/c/${slug}/join`} className="block rounded bg-brand px-4 py-3 text-center font-medium text-white">Join Today’s Queue</Link>
+            : <Button disabled className="w-full py-3">Join Today’s Queue</Button>}
           {data.actions.joinQueue.reason && <p className="mt-1 text-sm text-slate-600">{data.actions.joinQueue.reason}</p>}
         </div>
       </div>
@@ -208,10 +210,10 @@ function ReserveAndConfirm({ slug, serviceId, doctorId, startAt, zone, onLost }:
 /** P-07 my booking: /c/:slug/b/:token — the token is sent only in the X-Access-Token header (ADR-010). */
 export function MyBookingPage() {
   const { token } = useParams();
-  const [data, setData] = useState<PublicBooking | null>(null);
+  const [data, setData] = useState<(PublicBooking & { queue: PublicQueueStatus | null }) | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const load = () => api<PublicBooking>('GET', '/public/booking', undefined, { 'x-access-token': token ?? '' }).then(setData, setError);
+  const load = () => api<PublicBooking & { queue: PublicQueueStatus | null }>('GET', '/public/booking', undefined, { 'x-access-token': token ?? '' }).then(setData, setError);
   useEffect(() => void load(), [token]);
   if (error && !data) return <Page><h1 className="text-xl font-semibold">This link is not valid</h1><p className="text-sm text-slate-600">It may have expired. Please contact the clinic.</p></Page>;
   if (!data) return <Page><Loading /></Page>;
@@ -235,6 +237,7 @@ export function MyBookingPage() {
         <dt className="font-medium">Doctor</dt><dd className="col-span-2">{data.doctor.displayName}</dd>
         <dt className="font-medium">Patient</dt><dd className="col-span-2">{data.patient.firstName} · {data.patient.maskedPhone}</dd>
       </dl>
+      {data.queue && <QueueStatusCard token={token ?? ''} initial={data.queue} />}
       {error ? <ErrorState error={error} /> : null}
       {data.cancellation.allowed ? <Button variant="danger" disabled={busy} onClick={cancel}>Cancel appointment</Button>
         : data.status === 'CONFIRMED' && <p className="text-sm">To change or cancel, please call {data.clinic.contactPhone ? <a className="underline" href={`tel:${data.clinic.contactPhone}`}>{data.clinic.contactPhone}</a> : 'the clinic'}.</p>}

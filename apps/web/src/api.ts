@@ -31,6 +31,8 @@ export async function api<T>(method: string, path: string, body?: unknown, heade
   return data as T;
 }
 export const get = <T,>(p: string) => api<T>('GET', p);
+/** Staff headers for fetch-based SSE. */
+export const staffStreamHeaders = (): Record<string, string> => (clinicId ? { 'x-clinic-id': clinicId } : {});
 
 /** Downloads a binary staff resource (QR codes) with the clinic/CSRF headers a plain link cannot send. */
 export async function download(path: string, filename: string) {

@@ -3,12 +3,15 @@ import type { Logger } from './logger';
 import type { Clock } from './clock';
 import type { PrismaClient } from '../generated/prisma/index.js';
 import type { Env } from '@sc/config';
+import type { Hub } from '../modules/realtime/index';
 
 export interface Deps {
   prisma: PrismaClient;
   clock: Clock;
   env: Env;
   log: Logger;
+  /** SSE hub (ADR-012); created by createApp when not supplied. */
+  hub?: Hub;
 }
 
 export interface RequestCtx {

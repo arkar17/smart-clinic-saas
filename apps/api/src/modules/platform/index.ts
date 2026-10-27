@@ -85,6 +85,7 @@ export function platformRoutes(deps: Deps): Router {
         await writeAudit(tx, req, now, { clinicId: clinic.id, action: `clinic.${action}`, entityType: 'clinic', entityId: clinic.id, fromStatus: from, toStatus: to, reason });
         return tx.clinic.findFirstOrThrow({ where: { id: clinic.id }, include: { _count: { select: { members: { where: { isActive: true } } } } } });
       });
+      if (action === 'suspend') deps.hub?.closeClinic(clinic.id); // FR-PLT-003: live streams end; Clinic Admins may reconnect read-only
       res.json(clinicView(updated, updated._count.members));
     });
   r.post('/clinics/:id/activate', ...platformChain(deps, 'CAP-PLT-02'), transition('activate'));
@@ -115,6 +116,7 @@ export function platformRoutes(deps: Deps): Router {
     const user = await loadStaffAccount(uuidParam(req, 'id'));
     const now = clock.now();
     const temporaryPassword = await prisma.$transaction((tx) => resetPassword(tx, req, now, user.id, null));
+    deps.hub?.closeUser(user.id);
     res.json({ temporaryPassword });
   }));
 
@@ -126,6 +128,7 @@ export function platformRoutes(deps: Deps): Router {
     await prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: user.id }, data: { isActive: false, deactivationReason: reason } });
       await revokeUserSessions(tx, user.id, now, 'DEACTIVATED');
+      deps.hub?.closeUser(user.id);
       await writeAudit(tx, req, now, { action: 'account.deactivated', entityType: 'user', entityId: user.id, fromStatus: 'ACTIVE', toStatus: 'INACTIVE', reason, security: true });
     });
     res.json({ id: user.id, isActive: false });

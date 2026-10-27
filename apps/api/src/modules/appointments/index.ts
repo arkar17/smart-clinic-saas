@@ -1,5 +1,5 @@
 import { Router, type Request } from 'express';
-import { AppointmentListQuery, RescheduleRequest, StaffCancelRequest, StaffCreateAppointmentRequest, StaffSlotsQuery } from '@sc/contracts';
+import { CheckInBody, VersionBody, formatToken, AppointmentListQuery, RescheduleRequest, StaffCancelRequest, StaffCreateAppointmentRequest, StaffSlotsQuery } from '@sc/contracts';
 import type { Prisma } from '../../generated/prisma/index.js';
 import { AppError, notFound } from '../../infra/errors';
 import { fromDate, h, toDate, uuidParam } from '../../infra/http';
@@ -11,6 +11,8 @@ import { assertDoctorScope, grantOf, staffChain } from '../identity/index';
 import { findOrCreatePatient, validatePatientIdentity } from '../patients/index';
 import { TX, retryOnDeadlock, assertSlot, bookingContext, bookingLinkExpiry, computeSlots, expireStaleHolds, freshReference, issueBookingToken, privateBookingUrl } from '../booking/index';
 import { bookableIntervals } from '../scheduling/index';
+import { allocateEntry } from '../queue/index';
+import { emitEvent } from '../realtime/index';
 
 const include = { service: { select: { id: true, name: true, durationMin: true } }, doctor: { select: { id: true, displayName: true } }, patient: { select: { id: true, fullName: true, phoneE164: true } } } as const;
 type Row = Prisma.AppointmentGetPayload<{ include: typeof include }>;
@@ -151,6 +153,50 @@ export function appointmentRoutes(deps: Deps): { appointments: Router; availabil
       await tx.publicAccessToken.updateMany({ where: { clinicId: ctx.clinicId, appointmentId: a.id, purpose: 'BOOKING', revokedAt: null }, data: { expiresAt: bookingLinkExpiry(now) } });
       await writeAudit(tx, req, now, { clinicId: ctx.clinicId, action: 'appointment.cancelled', entityType: 'appointment', entityId: a.id, fromStatus: 'CONFIRMED', toStatus: 'CANCELLED', reason: body.reason });
     }, TX);
+    res.json(view(await load(req, a.id)));
+  }));
+
+  // FR-APT-012 / AT-08 + QT-02: one transaction sets CHECKED_IN and allocates the token; UNIQUE (appointment_id) prevents a second entry.
+  appointments.post('/:id/check-in', ...staffChain(deps, 'CAP-APT-07', 'write'), h(async (req, res) => {
+    const body = parse(CheckInBody, req.body);
+    const c = await loadClinic(req);
+    const ctx = req.clinic!;
+    const a = await load(req, uuidParam(req, 'id'));
+    const now = clock.now();
+    const out = await retryOnDeadlock(() => prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM appointment WHERE id = ${a.id}::uuid AND clinic_id = ${c.id}::uuid FOR UPDATE`;
+      const cur = await tx.appointment.findFirstOrThrow({ where: { id: a.id, clinicId: c.id } });
+      if (cur.status !== 'CONFIRMED') throw new AppError('INVALID_TRANSITION', 'Only confirmed appointments can be checked in.', { current: { version: cur.version } });
+      if (body.version !== undefined && body.version !== cur.version) throw new AppError('VERSION_CONFLICT', undefined, { current: { version: cur.version } });
+      if (fromDate(cur.serviceDate) !== clinicToday(now, c.timezone)) throw new AppError('INVALID_TRANSITION', 'Check-in is possible only on the appointment day.');
+      const opens = cur.startAt.getTime() - c.checkinBeforeMin * 60_000;
+      const closes = cur.startAt.getTime() + c.checkinAfterMin * 60_000;
+      const inWindow = now.getTime() >= opens && now.getTime() <= closes;
+      if (!inWindow && !body.overrideReason) throw new AppError('OVERRIDE_REASON_REQUIRED', 'Outside the check-in window; enter a reason to check in (A-019).');
+      const sortTime = new Date(Math.max(now.getTime(), cur.startAt.getTime())); // BR-060 / A-012
+      const { entry } = await allocateEntry(tx, c, now, { source: 'SCHEDULED', doctorId: cur.doctorId, serviceId: cur.serviceId, patientId: cur.patientId!, appointmentId: cur.id, sortTime, memberId: ctx.memberId });
+      await tx.appointment.update({ where: { id: cur.id }, data: { status: 'CHECKED_IN', checkedInAt: now, checkInOverrideReason: inWindow ? null : body.overrideReason!, updatedByMemberId: ctx.memberId, version: { increment: 1 } } });
+      await emitEvent(tx, { clinicId: c.id, type: 'appointment.updated', doctorId: cur.doctorId, appointmentId: cur.id, payload: { entityId: cur.id, status: 'CHECKED_IN' } });
+      await writeAudit(tx, req, now, { clinicId: c.id, action: inWindow ? 'appointment.checked_in' : 'appointment.checked_in_override', entityType: 'appointment', entityId: cur.id, fromStatus: 'CONFIRMED', toStatus: 'CHECKED_IN', reason: inWindow ? null : body.overrideReason });
+      return entry;
+    }, TX));
+    res.json({ appointment: view(await load(req, a.id)), queueEntry: { id: out.id, token: formatToken(out.tokenNumber), status: out.status } });
+  }));
+
+  // FR-APT-013 / AT-09: staff no-show only after the grace period.
+  appointments.post('/:id/no-show', ...staffChain(deps, 'CAP-APT-08', 'write'), h(async (req, res) => {
+    const body = parse(VersionBody, req.body);
+    const c = await loadClinic(req);
+    const a = await load(req, uuidParam(req, 'id'));
+    const now = clock.now();
+    if (a.status !== 'CONFIRMED') throw new AppError('INVALID_TRANSITION', 'Only confirmed appointments can be marked no-show.', { current: { version: a.version } });
+    if (now.getTime() < a.startAt.getTime() + c.noShowGraceMin * 60_000) throw new AppError('INVALID_TRANSITION', 'The no-show grace period has not passed yet.');
+    await prisma.$transaction(async (tx) => {
+      const n = await tx.appointment.updateMany({ where: { id: a.id, clinicId: c.id, status: 'CONFIRMED', ...(body.version !== undefined ? { version: body.version } : {}) }, data: { status: 'NO_SHOW', noShowAt: now, updatedByMemberId: req.clinic!.memberId, version: { increment: 1 } } });
+      if (n.count === 0) throw new AppError('VERSION_CONFLICT', undefined, { current: { version: a.version } });
+      await emitEvent(tx, { clinicId: c.id, type: 'appointment.updated', doctorId: a.doctorId, appointmentId: a.id, payload: { entityId: a.id, status: 'NO_SHOW' } });
+      await writeAudit(tx, req, now, { clinicId: c.id, action: 'appointment.no_show', entityType: 'appointment', entityId: a.id, fromStatus: 'CONFIRMED', toStatus: 'NO_SHOW' });
+    });
     res.json(view(await load(req, a.id)));
   }));
 

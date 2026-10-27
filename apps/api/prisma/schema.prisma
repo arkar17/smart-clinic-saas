@@ -91,6 +91,27 @@ enum IdempotencyState {
   @@map("idempotency_state")
 }
 
+enum QueueSource {
+  SCHEDULED
+  QR_WALK_IN
+  STAFF_WALK_IN
+
+  @@map("queue_source")
+}
+
+enum QueueStatus {
+  REGISTERED
+  WAITING
+  CALLED
+  IN_CONSULTATION
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  EXPIRED
+
+  @@map("queue_status")
+}
+
 enum ActorType {
   STAFF
   PUBLIC_PATIENT
@@ -190,6 +211,9 @@ model Clinic {
   appointments  Appointment[]
   accessTokens  PublicAccessToken[]
   idempotency   IdempotencyRecord[]
+  queueCounters QueueCounter[]
+  queueEntries  QueueEntry[]
+  events        ClinicEvent[]
   auditEvents   AuditLog[]
 
   @@map("clinic")
@@ -217,6 +241,8 @@ model ClinicMember {
   appointmentsCreated Appointment[] @relation("AppointmentCreatedBy")
   appointmentsUpdated Appointment[] @relation("AppointmentUpdatedBy")
   accessTokens        PublicAccessToken[]
+  queueEntriesCreated QueueEntry[]
+  countersPaused      QueueCounter[]
 
   @@unique([clinicId, userId])
   @@unique([clinicId, id])
@@ -242,6 +268,8 @@ model Doctor {
   availability DoctorAvailability[]
   exceptions   ScheduleException[]
   appointments Appointment[]
+  queueEntries QueueEntry[]
+  events       ClinicEvent[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, memberId])
@@ -299,6 +327,7 @@ model ClinicService {
   clinic       Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   doctors      DoctorService[]
   appointments Appointment[]
+  queueEntries QueueEntry[]
 
   @@unique([clinicId, id])
   @@map("clinic_service")
@@ -399,6 +428,7 @@ model Patient {
 
   clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   appointments Appointment[]
+  queueEntries QueueEntry[]
 
   @@unique([clinicId, id])
   @@index([clinicId, phoneE164])
@@ -445,6 +475,8 @@ model Appointment {
   createdBy    ClinicMember?       @relation("AppointmentCreatedBy", fields: [clinicId, createdByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "appointment_created_by_fkey")
   updatedBy    ClinicMember?       @relation("AppointmentUpdatedBy", fields: [clinicId, updatedByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "appointment_updated_by_fkey")
   accessTokens PublicAccessToken[]
+  queueEntry   QueueEntry?
+  events       ClinicEvent[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, bookingReference])
@@ -471,6 +503,7 @@ model PublicAccessToken {
 
   clinic      Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   appointment Appointment?  @relation(fields: [clinicId, appointmentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "public_access_token_appointment_fkey")
+  queueEntry  QueueEntry?   @relation(fields: [clinicId, queueEntryId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "public_access_token_queue_entry_fkey")
   createdBy   ClinicMember? @relation(fields: [clinicId, createdByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "public_access_token_created_by_fkey")
 
   @@unique([clinicId, id])
@@ -494,4 +527,93 @@ model IdempotencyRecord {
   @@id([clinicId, endpoint, idemKey])
   @@index([expiresAt])
   @@map("idempotency_record")
+}
+
+// SC-3 (Arch 11.14): one row per clinic-local day; the row lock serialises token allocation (ADR-008).
+model QueueCounter {
+  clinicId         String    @map("clinic_id") @db.Uuid
+  serviceDate      DateTime  @map("service_date") @db.Date
+  lastToken        Int       @default(0) @map("last_token")
+  walkInCount      Int       @default(0) @map("walk_in_count")
+  walkInPaused     Boolean   @default(false) @map("walk_in_paused")
+  pausedByMemberId String?   @map("paused_by_member_id") @db.Uuid
+  pausedAt         DateTime? @map("paused_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic   Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  pausedBy ClinicMember? @relation(fields: [clinicId, pausedByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "queue_counter_paused_by_fkey")
+  entries  QueueEntry[]
+
+  @@id([clinicId, serviceDate])
+  @@map("queue_counter")
+}
+
+// SC-3 (Arch 11.15): a patient's place in today's queue (SRS 9.3–9.4). Guards are hand-written SQL.
+model QueueEntry {
+  id                     String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId               String       @map("clinic_id") @db.Uuid
+  serviceDate            DateTime     @map("service_date") @db.Date
+  tokenNumber            Int          @map("token_number")
+  doctorId               String       @map("doctor_id") @db.Uuid
+  serviceId              String       @map("service_id") @db.Uuid
+  patientId              String       @map("patient_id") @db.Uuid
+  appointmentId          String?      @unique @map("appointment_id") @db.Uuid
+  source                 QueueSource
+  status                 QueueStatus
+  countsTowardCapacity   Boolean      @map("counts_toward_capacity")
+  capacityOverrideReason String?      @map("capacity_override_reason") @db.VarChar(200)
+  registeredAt           DateTime     @default(now()) @map("registered_at") @db.Timestamptz(6)
+  arrivedAt              DateTime?    @map("arrived_at") @db.Timestamptz(6)
+  sortTime               DateTime?    @map("sort_time") @db.Timestamptz(6)
+  firstCalledAt          DateTime?    @map("first_called_at") @db.Timestamptz(6)
+  lastCalledAt           DateTime?    @map("last_called_at") @db.Timestamptz(6)
+  startedAt              DateTime?    @map("started_at") @db.Timestamptz(6)
+  completedAt            DateTime?    @map("completed_at") @db.Timestamptz(6)
+  endedAt                DateTime?    @map("ended_at") @db.Timestamptz(6)
+  recallCount            Int          @default(0) @map("recall_count") @db.SmallInt
+  autoClosed             Boolean      @default(false) @map("auto_closed")
+  cancelledBy            CancelActor? @map("cancelled_by")
+  endReason              String?      @map("end_reason") @db.VarChar(200)
+  createdByMemberId      String?      @map("created_by_member_id") @db.Uuid
+  version                Int          @default(0)
+  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic       Clinic              @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  counter      QueueCounter        @relation(fields: [clinicId, serviceDate], references: [clinicId, serviceDate], onDelete: Restrict, onUpdate: Restrict, map: "queue_entry_counter_fkey")
+  doctor       Doctor              @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "queue_entry_doctor_fkey")
+  service      ClinicService       @relation(fields: [clinicId, serviceId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "queue_entry_service_fkey")
+  patient      Patient             @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "queue_entry_patient_fkey")
+  appointment  Appointment?        @relation(fields: [clinicId, appointmentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "queue_entry_appointment_fkey")
+  createdBy    ClinicMember?       @relation(fields: [clinicId, createdByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "queue_entry_created_by_fkey")
+  accessTokens PublicAccessToken[]
+  events       ClinicEvent[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, serviceDate, tokenNumber])
+  @@unique([clinicId, appointmentId])
+  @@index([clinicId, serviceDate, doctorId, status, sortTime, tokenNumber])
+  @@map("queue_entry")
+}
+
+// SC-3 (Arch 11.20): transactional outbox for SSE fan-out (ADR-012). PII-free payloads (ADR-026).
+model ClinicEvent {
+  id            BigInt   @id @default(autoincrement())
+  clinicId      String   @map("clinic_id") @db.Uuid
+  type          String   @db.VarChar(40)
+  doctorId      String?  @map("doctor_id") @db.Uuid
+  queueEntryId  String?  @map("queue_entry_id") @db.Uuid
+  appointmentId String?  @map("appointment_id") @db.Uuid
+  payload       Json
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  clinic      Clinic       @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctor      Doctor?      @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict, map: "clinic_event_doctor_fkey")
+  queueEntry  QueueEntry?  @relation(fields: [clinicId, queueEntryId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict, map: "clinic_event_queue_entry_fkey")
+  appointment Appointment? @relation(fields: [clinicId, appointmentId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict, map: "clinic_event_appointment_fkey")
+
+  @@index([clinicId, id])
+  @@index([createdAt])
+  @@map("clinic_event")
 }

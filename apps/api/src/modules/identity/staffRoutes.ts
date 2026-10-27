@@ -65,6 +65,7 @@ export function staffRoutes(deps: Deps): Router {
         if (m.doctor && !body.roles.includes('DOCTOR')) throw fieldError('roles', 'Unlink the doctor profile before removing the DOCTOR role');
         await tx.clinicMember.update({ where: { id: m.id }, data: { roles: body.roles } });
         await clearMembershipSelection(tx, m.id);
+        deps.hub?.closeMember(m.id);
         await writeAudit(tx, req, now, { clinicId: ctx.clinicId, action: 'membership.roles_changed', entityType: 'clinic_member', entityId: m.id, changes: { from: m.roles, to: body.roles } });
       }
       if (body.email && body.email !== m.user.email) {
@@ -86,6 +87,7 @@ export function staffRoutes(deps: Deps): Router {
       if (m.roles.includes('CLINIC_ADMIN')) await assertNotLastAdmin(tx, ctx.clinicId, m.id);
       await tx.clinicMember.update({ where: { id: m.id }, data: { isActive: false, deactivatedAt: now } });
       await clearMembershipSelection(tx, m.id); // FR-STF-003: access to this clinic ends; global account untouched
+      deps.hub?.closeMember(m.id); // and its live streams close (TC-STF-005)
       await writeAudit(tx, req, now, { clinicId: ctx.clinicId, action: 'membership.deactivated', entityType: 'clinic_member', entityId: m.id, fromStatus: 'ACTIVE', toStatus: 'INACTIVE' });
     });
     res.json(memberView(await load(ctx.clinicId, uuidParam(req, 'memberId'))));
@@ -112,6 +114,7 @@ export function staffRoutes(deps: Deps): Router {
       if (await hasOtherClinicMembership(tx, m.user.id, ctx.clinicId)) throw forbidden('This account also belongs to another clinic; the Platform Administrator must reset it.');
       return resetPassword(tx, req, now, m.user.id, ctx.clinicId);
     });
+    deps.hub?.closeWhere((x) => x.kind === 'staff' && x.clinicId === ctx.clinicId && x.memberId === uuidParam(req, 'memberId'));
     res.json({ temporaryPassword: temporary });
   }));
 
