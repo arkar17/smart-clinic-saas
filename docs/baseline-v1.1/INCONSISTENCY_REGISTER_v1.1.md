@@ -94,3 +94,11 @@
 | Live hosting | D-10 | When the Product Owner wants a public demo |
 | Moderated usability test (SRS SC-01…SC-03) | IR-26 | After SC-4, before release sign-off |
 | Product Owner freeze signature | — | Now (SRS §1.3 approval table) |
+
+## 6. Post-freeze clarifications
+
+Items raised after the baseline freeze. They clarify how the baseline is applied; they change no approved requirement, test, ADR or gate and are not counted in the §1 totals.
+
+| ID | Area | Type | Sev. | Finding | Resolution | Where applied | Status |
+|---|---|---|---|---|---|---|---|
+| IR-37 | Document authority | Doc defect | Low | The first root `CLAUDE.md` (commit `185ef7d`) listed the Implementation & QA Plan above the Permission Matrix and diagrams, which contradicts `README_DOCUMENTS.md` §1. | Product Owner confirmed (27 October 2026) the `README_DOCUMENTS.md` §1 order: SRS → Technical Architecture → ADR log → Permission Matrix → diagrams (supporting) → Implementation & QA Plan → Traceability Matrix → Acceptance Test Matrix. No functional requirement changed. | Root `CLAUDE.md` | Closed |

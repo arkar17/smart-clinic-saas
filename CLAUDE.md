@@ -31,17 +31,19 @@ handled only by the receptionist workflow (FR-QUE-020, ADR-037).
 
 ## Documentation authority
 
+Approved precedence (`README_DOCUMENTS.md` §1; higher governs):
+
 1. SRS v1.1 rev B (`01_Smart_Clinic_SRS_v1.1.docx`)
 2. Technical Architecture v1.1 rev B (`02_Smart_Clinic_Technical_Architecture_v1.1.docx`)
 3. ADR Log (`ADR_LOG_v1.1.md`)
-4. Implementation & QA Plan (`03_Smart_Clinic_Implementation_and_QA_Plan_v1.1.docx`)
-5. Permission and traceability matrices (`PERMISSION_MATRIX_v1.1.csv`, `TRACEABILITY_MATRIX_v1.1.md`,
-   `ACCEPTANCE_TEST_MATRIX_v1.1.csv`)
+4. Permission Matrix (`PERMISSION_MATRIX_v1.1.csv`)
+5. Diagrams, supporting references: `01_system_workflow`, `02_patient_and_staff_flows`,
+   `03_database_erd`, `04_role_permissions`, `05_navigation_sitemap` (`.drawio`)
+6. Implementation & QA Plan v1.1 rev B (`03_Smart_Clinic_Implementation_and_QA_Plan_v1.1.docx`)
+7. Traceability Matrix (`TRACEABILITY_MATRIX_v1.1.md`)
+8. Acceptance Test Matrix (`ACCEPTANCE_TEST_MATRIX_v1.1.csv`)
 
-> Note: `README_DOCUMENTS.md` §1 ranks the Permission Matrix (#4) above the Plan (#10). This is an
-> open ordering question for the Product Owner; until decided, treat any conflict between them as
-> a contradiction to report.
-
+Conflicts and decisions are logged in `INCONSISTENCY_REGISTER_v1.1.md` (see IR-37 for this ordering).
 If documents conflict, **stop and report the contradiction** (and propose an
 `INCONSISTENCY_REGISTER_v1.1.md` entry) — never invent a resolution or new requirements.
 Per gate, read the gate's traceability rows plus only the specific SRS/architecture section a task needs.
