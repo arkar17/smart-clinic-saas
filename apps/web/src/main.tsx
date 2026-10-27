@@ -20,6 +20,7 @@ const Placeholder = ({ text }: { text: string }) => <main className="p-8 text-ce
 // Realms (SC1-FE-01): public (SC-2), app (staff), platform, display (SC-3).
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    {import.meta.env.VITE_DEMO === 'true' && <div role="note" className="bg-amber-300 px-3 py-1 text-center text-sm font-semibold text-amber-950">Demo — fictional data</div>}
     <AuthProvider>
       <ToastProvider>
         <BrowserRouter>

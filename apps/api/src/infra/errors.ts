@@ -64,9 +64,22 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   else if (err?.type === 'entity.parse.failed') appErr = new AppError('BAD_REQUEST', 'Malformed JSON.');
   else appErr = mapDatabaseError(err) ?? new AppError('INTERNAL');
 
-  if (appErr.code === 'INTERNAL') req.ctx?.log.error({ err }, 'unhandled error');
+  // FR-SEC-010: Prisma messages can echo query arguments (names, phones), so only the error class, code and model are logged.
+  if (appErr.code === 'INTERNAL') req.ctx?.log.error({ error: safeErrorSummary(err) }, 'unhandled error');
   if (appErr.extra.retryAfterSec) res.setHeader('Retry-After', String(appErr.extra.retryAfterSec));
   res.status(ERROR_STATUS[appErr.code]).json({
     error: { code: appErr.code, message: appErr.message, ...appErr.extra, requestId: req.ctx?.requestId ?? '' },
   });
 };
+
+export function safeErrorSummary(err: unknown) {
+  const e = err as { name?: string; code?: string; meta?: { modelName?: string }; stack?: string };
+  const isPrisma = typeof e?.name === 'string' && e.name.startsWith('PrismaClient');
+  return {
+    name: e?.name ?? typeof err,
+    code: e?.code,
+    model: e?.meta?.modelName,
+    // Stack frames only (no message line) for non-database errors.
+    stack: isPrisma ? undefined : e?.stack?.split('\n').slice(1, 6).join('\n'),
+  };
+}

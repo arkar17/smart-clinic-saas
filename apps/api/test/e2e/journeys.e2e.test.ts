@@ -117,7 +117,7 @@ describe.each(['desktop', 'mobile'] as const)('Journey B — walk-in (%s)', (vp)
   });
 });
 
-describe('staff workflows and security (Chromium)', () => {
+describe('staff workflows and security', () => {
   it('login, clinic switching, admin hours/services, doctor and PA denials, cross-clinic isolation, revocation, private links, invalid transitions', async () => {
     f = await seedFixtures();
     // Clinic switching (TC-STF-004 E2E part).
@@ -178,13 +178,46 @@ describe('staff workflows and security (Chromium)', () => {
   });
 });
 
+describe('keyboard-only walkthrough (TC-NFR-001 keyboard part)', () => {
+  it('portal → join → service → details are reachable and operable with Tab/Enter/Space; staff skip link comes first', async () => {
+    f = await seedFixtures();
+    const p = await page('mobile');
+    await p.goto(`${WEB}/c/e2e-clinic`);
+    const tabTo = async (name: RegExp, max = 25) => {
+      for (let i = 0; i < max; i++) {
+        await p.keyboard.press('Tab');
+        if (name.test((await p.evaluate(() => (document.activeElement as HTMLElement | null)?.innerText || (document.activeElement as HTMLInputElement | null)?.labels?.[0]?.innerText || '')) ?? '')) return;
+      }
+      throw new Error(`could not reach ${name} by keyboard`);
+    };
+    await tabTo(/Join Today’s Queue/);
+    await p.keyboard.press('Enter');
+    await p.getByRole('heading', { name: 'Join today’s queue' }).waitFor();
+    await tabTo(/General consultation/);
+    await p.keyboard.press('Enter');
+    await tabTo(/Full name/);
+    await p.keyboard.type('Keyboard Fictional');
+    await p.keyboard.press('Tab');
+    await p.keyboard.type(nextPhone());
+    await tabTo(/privacy notice/);
+    await p.keyboard.press('Space');
+    await tabTo(/Get my number/);
+    await p.keyboard.press('Enter');
+    await p.getByText('Please go to reception to confirm you have arrived').waitFor();
+    const s2 = await page();
+    await staffLogin(s2, 'e2e.admin@example.test');
+    await s2.keyboard.press('Tab');
+    expect(await s2.evaluate(() => document.activeElement?.textContent)).toBe('Skip to content');
+  });
+});
+
 describe('accessibility and responsiveness (TC-NFR-001, TC-NFR-002)', () => {
   it('axe reports no serious/critical issues and no horizontal scroll at 360/430/768/1280 px on key screens', async () => {
     f = await seedFixtures();
     const problems: string[] = [];
     const publicPaths = ['/c/e2e-clinic', '/c/e2e-clinic/book', '/c/e2e-clinic/join', '/login'];
     const staffPaths = ['/app', '/app/queue', '/app/appointments', '/app/settings', '/app/hours', '/app/services', '/app/doctors', '/app/staff', '/app/reports'];
-    for (const width of [360, 430, 768, 1280]) {
+    for (const width of [360, 430, 640, 768, 1280]) { // 640 px ≈ 1280 px at 200 % zoom
       const ctx = await browser.newContext({ viewport: { width, height: 900 } });
       const p = await ctx.newPage();
       for (const path of publicPaths) {

@@ -10,7 +10,10 @@ import { addMember, makeUser, prisma, resetDb } from '../helpers';
 
 const require = createRequire(import.meta.url);
 // The session provides a preinstalled Playwright + Chromium (no package install needed).
-export const { chromium } = require('playwright') as typeof import('playwright');
+const pw = require('playwright') as typeof import('playwright');
+/** E2E_BROWSER=webkit selects WebKit where it is installed (CI); Chromium otherwise. */
+export const browserName = process.env.E2E_BROWSER === 'webkit' ? 'webkit' : 'chromium';
+export const chromium = browserName === 'webkit' ? pw.webkit : pw.chromium;
 export type Page = import('playwright').Page;
 export type Browser = import('playwright').Browser;
 

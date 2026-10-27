@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "prisma:generate": "prisma generate",
     "db:verify": "tsx scripts/db-verify.ts",
+    "demo:seed": "tsx scripts/demo-seed.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

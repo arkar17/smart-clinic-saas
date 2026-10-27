@@ -1,51 +1,81 @@
-# Development stack: db (PostgreSQL 16), api, worker (ADR-013, same image), web.
+# Smart Clinic local stack (SC5-BE-02): db, explicit one-shot migrate, api, worker, web.
+# Secrets come from .env (never committed); copy .env.example to .env first.
+#   docker compose up -d db
+#   docker compose run --rm migrate      # explicit, controlled migration step (prisma migrate deploy + db:verify)
+#   docker compose up -d api worker web
+# The API and worker never migrate, seed or reset on start-up.
+x-node: &node
+  image: node:22-bookworm
+  working_dir: /repo
+  volumes: [".:/repo", "node_modules:/repo/node_modules"]
+  environment: &env
+    NODE_ENV: development
+    DATABASE_URL: postgresql://${POSTGRES_USER:-smartclinic}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-smartclinic_dev}
+    APP_ORIGIN: ${APP_ORIGIN:-http://localhost:5173}
+    PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:5173}
+    COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    TRUST_PROXY: ${TRUST_PROXY:-1}
+    IP_HASH_PEPPER: ${IP_HASH_PEPPER:?set IP_HASH_PEPPER in .env}
+    IDEMPOTENCY_ENC_KEY: ${IDEMPOTENCY_ENC_KEY:?set IDEMPOTENCY_ENC_KEY in .env}
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+
 services:
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: smartclinic
-      POSTGRES_PASSWORD: smartclinic
-      POSTGRES_DB: smartclinic_dev
-    ports: ["5432:5432"]
+      POSTGRES_USER: ${POSTGRES_USER:-smartclinic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-smartclinic_dev}
+    ports: ["127.0.0.1:5432:5432"]
     volumes: [db-data:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U smartclinic -d smartclinic_dev"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
-      retries: 10
+      retries: 20
+
+  # Run on demand only (profile): applies committed migrations, then verifies hand-written objects.
+  migrate:
+    <<: *node
+    profiles: ["migrate"]
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @sc/api exec prisma migrate deploy && pnpm db:verify"
+    depends_on:
+      db: { condition: service_healthy }
+
   api:
-    image: node:22-bookworm
-    working_dir: /repo
-    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @sc/api dev"
-    environment:
-      DATABASE_URL: postgresql://smartclinic:smartclinic@db:5432/smartclinic_dev
-      APP_ORIGIN: http://localhost:5173
-      COOKIE_SECURE: "false"
-      IP_HASH_PEPPER: change-me-local-development-only
-      IDEMPOTENCY_ENC_KEY: bG9jYWwtZGV2LW9ubHktaWRlbXBvdGVuY3kta2V5MzI=
-    ports: ["3000:3000"]
-    volumes: [".:/repo"]
+    <<: *node
+    restart: unless-stopped
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @sc/api start"
+    ports: ["127.0.0.1:3000:3000"]
     depends_on:
       db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      start_period: 90s
+      retries: 6
+
   worker:
-    image: node:22-bookworm
-    working_dir: /repo
-    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @sc/api worker"
+    <<: *node
+    restart: unless-stopped
+    command: sh -c "corepack enable && pnpm --filter @sc/api worker"
     environment:
-      DATABASE_URL: postgresql://smartclinic:smartclinic@db:5432/smartclinic_dev
-      IP_HASH_PEPPER: change-me-local-development-only
-      IDEMPOTENCY_ENC_KEY: bG9jYWwtZGV2LW9ubHktaWRlbXBvdGVuY3kta2V5MzI=
+      <<: *env
       WORKER_ENABLED: "true"
-    volumes: [".:/repo"]
     depends_on:
-      db: { condition: service_healthy }
+      api: { condition: service_healthy }
+
   web:
-    image: node:22-bookworm
-    working_dir: /repo
-    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @sc/web dev"
+    <<: *node
+    restart: unless-stopped
+    command: sh -c "corepack enable && pnpm --filter @sc/web dev"
     environment:
       API_URL: http://api:3000
-    ports: ["5173:5173"]
-    volumes: [".:/repo"]
-    depends_on: [api]
+      VITE_DEMO: ${VITE_DEMO:-true}
+    ports: ["127.0.0.1:5173:5173"]
+    depends_on:
+      api: { condition: service_healthy }
+
 volumes:
-  db-data:
+  db-data: # persistent PostgreSQL storage; removed only by `docker compose down -v`
+  node_modules:

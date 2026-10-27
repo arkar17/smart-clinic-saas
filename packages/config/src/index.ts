@@ -22,7 +22,12 @@ const EnvSchema = z.object({
 export type Env = z.infer<typeof EnvSchema>;
 
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
-  return EnvSchema.parse(source);
+  const env = EnvSchema.parse(source);
+  // Release guard: production must run behind HTTPS with Secure cookies and a real APP_ORIGIN.
+  if (env.NODE_ENV === 'production' && (!env.COOKIE_SECURE || !env.APP_ORIGIN.startsWith('https://'))) {
+    throw new Error('Production requires COOKIE_SECURE=true and an https:// APP_ORIGIN');
+  }
+  return env;
 }
 
 /** A-024 session lifetimes and FR-SEC-003 lockout parameters. */

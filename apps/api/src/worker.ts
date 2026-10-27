@@ -3,6 +3,7 @@
 import { loadEnv } from '@sc/config';
 import { PrismaClient } from './generated/prisma/index.js';
 import { createLogger } from './infra/logger';
+import { safeErrorSummary } from './infra/errors';
 import { systemClock } from './infra/clock';
 import { expireHolds, purgeIdempotency } from './modules/booking/index';
 import { closeDays } from './modules/queue/index';
@@ -18,7 +19,7 @@ if (process.env.WORKER_ENABLED !== 'true' || env.NODE_ENV === 'test' || dbName.e
 const prisma = new PrismaClient();
 
 function every(ms: number, name: string, job: () => Promise<unknown>) {
-  const run = () => job().then((r) => log.debug({ job: name, r }, 'job done')).catch((err) => log.error({ err, job: name }, 'job failed'));
+  const run = () => job().then((r) => log.debug({ job: name, r }, 'job done')).catch((err) => log.error({ error: safeErrorSummary(err), job: name }, 'job failed'));
   void run();
   return setInterval(run, ms);
 }
