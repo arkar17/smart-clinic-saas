@@ -12,6 +12,10 @@ const EnvSchema = z.object({
   TRUST_PROXY: z.coerce.number().int().default(1),
   LOGIN_RATE_LIMIT_PER_10_MIN: z.coerce.number().int().default(20),
   PUBLIC_RATE_LIMIT_PER_MIN: z.coerce.number().int().default(120),
+  HOLD_RATE_LIMIT_PER_MIN: z.coerce.number().int().default(10),
+  TOKEN_FAILURE_LIMIT_PER_10_MIN: z.coerce.number().int().default(20),
+  /** ADR-011: base64 of 32 random bytes; encrypts idempotent responses that contain private links. */
+  IDEMPOTENCY_ENC_KEY: z.string().refine((k) => Buffer.from(k, 'base64').length === 32, 'Must be base64 of 32 bytes'),
   /** Canonical public host encoded in clinic QR codes (FR-QR-001); defaults to APP_ORIGIN. */
   PUBLIC_BASE_URL: z.string().url().optional(),
 });

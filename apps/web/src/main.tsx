@@ -9,7 +9,8 @@ import { AppHome, AppShell } from './pages/shell';
 import { DoctorsPage, HoursPage, ServicesPage, SettingsPage, StaffPage } from './pages/admin';
 import { PlatformPage } from './pages/platform';
 import { MySchedulePage } from './pages/doctor';
-import { BookPage, PortalPage } from './pages/public';
+import { BookPage, MyBookingPage, PortalPage } from './pages/public';
+import { AppointmentsPage } from './pages/appointments';
 
 const Placeholder = ({ text }: { text: string }) => <main className="p-8 text-center text-slate-600">{text}</main>;
 
@@ -26,6 +27,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/app/select-clinic" element={<SelectClinicPage />} />
             <Route path="/app" element={<AppShell realm="app" />}>
               <Route index element={<AppHome />} />
+              <Route path="appointments" element={<AppointmentsPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="hours" element={<HoursPage />} />
               <Route path="services" element={<ServicesPage />} />
@@ -38,6 +40,7 @@ createRoot(document.getElementById('root')!).render(
             </Route>
             <Route path="/c/:slug" element={<PortalPage />} />
             <Route path="/c/:slug/book" element={<BookPage />} />
+            <Route path="/c/:slug/b/:token" element={<MyBookingPage />} />
             <Route path="/display" element={<Placeholder text="The waiting-room display arrives in SC-3." />} />
             <Route path="*" element={<Placeholder text="Page not found." />} />
           </Routes>

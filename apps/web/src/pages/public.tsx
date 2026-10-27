@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { PublicClinic, PublicService } from '@sc/contracts';
-import { get } from '../api';
-import { Button, EmptyState, ErrorState, Loading, useResource } from '../components';
+import type { PublicBooking, PublicClinic, PublicService } from '@sc/contracts';
+import { ApiError, api, get } from '../api';
+import { Button, EmptyState, ErrorState, Field, Loading, fieldsOf, messageOf, useResource } from '../components';
 
 const Page = ({ children }: { children: React.ReactNode }) => <main className="mx-auto max-w-xl space-y-4 p-4">{children}</main>;
 const Unavailable = () => (
@@ -114,12 +114,131 @@ export function BookPage() {
           )}
         </section>
       )}
-      {slot && (
-        <div className="rounded bg-white p-3 shadow-sm">
-          <Button disabled className="w-full">Continue</Button>
-          <p className="mt-1 text-sm text-slate-600">Reserving this time and entering your name and phone will be available soon.</p>
+      {slot && service && doctorId && <ReserveAndConfirm key={slot} slug={slug!} serviceId={service.id} doctorId={doctorId} startAt={slot} zone={zone} onLost={() => { const d = date; setDate(null); setTimeout(() => setDate(d), 0); }} />}
+    </Page>
+  );
+}
+
+type Hold = { reservationId: string; reservationSecret: string; expiresAt: string; summary: { service: string; doctor: string; startAt: string; endAt: string } };
+type Confirmed = { bookingReference: string; privateUrl: string; startAt: string; service: string; doctor: string; timezone: string };
+
+/** P-05 details with hold countdown → P-06 confirmed (FR-APT-005..007). */
+function ReserveAndConfirm({ slug, serviceId, doctorId, startAt, zone, onLost }: { slug: string; serviceId: string; doctorId: string; startAt: string; zone: string; onLost: () => void }) {
+  const [hold, setHold] = useState<Hold | null>(null);
+  const [done, setDone] = useState<Confirmed | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [left, setLeft] = useState(0);
+  const confirmKey = useRef(crypto.randomUUID()); // same key for retries of one confirmation (BR-025)
+  const base = `/public/clinics/${slug}/reservations`;
+
+  async function reserve() {
+    setError(null);
+    try {
+      setHold(await api<Hold>('POST', base, { serviceId, doctorId, startAt }, { 'idempotency-key': crypto.randomUUID() }));
+      confirmKey.current = crypto.randomUUID();
+    } catch (e) {
+      setError(e);
+      if (e instanceof ApiError && e.body.code === 'SLOT_UNAVAILABLE') onLost();
+    }
+  }
+  useEffect(() => {
+    if (!hold) return;
+    const tick = () => setLeft(Math.max(0, Math.round((Date.parse(hold.expiresAt) - Date.now()) / 1000)));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [hold]);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!hold) return;
+    const f = new FormData(e.currentTarget);
+    try {
+      setDone(await api<Confirmed>('POST', `${base}/${hold.reservationId}/confirm`,
+        { reservationSecret: hold.reservationSecret, fullName: f.get('fullName'), phone: f.get('phone'), privacyAccepted: f.get('privacy') === 'on' },
+        { 'idempotency-key': confirmKey.current }));
+    } catch (x) {
+      setError(x);
+      if (x instanceof ApiError && ['HOLD_EXPIRED', 'SLOT_UNAVAILABLE'].includes(x.body.code)) { setHold(null); onLost(); }
+    }
+  }
+  async function release() {
+    if (hold) await api('POST', `${base}/${hold.reservationId}/release`, { reservationSecret: hold.reservationSecret }, { 'idempotency-key': crypto.randomUUID() }).catch(() => {});
+    setHold(null);
+  }
+
+  if (done) {
+    return (
+      <section className="space-y-2 rounded border border-green-300 bg-green-50 p-4" aria-live="polite">
+        <h2 className="text-lg font-semibold">Your appointment is confirmed</h2>
+        <p>Booking reference: <strong className="font-mono">{done.bookingReference}</strong></p>
+        <p>{done.service} with {done.doctor}, {new Date(done.startAt).toLocaleString([], { timeZone: done.timezone, dateStyle: 'full', timeStyle: 'short' })}</p>
+        <p className="text-sm">Keep this private link to view or cancel your booking. Anyone with the link can see it.</p>
+        <div className="flex flex-wrap gap-2">
+          <a className="rounded bg-brand px-3 py-1.5 text-sm text-white" href={new URL(done.privateUrl).pathname}>Open my booking</a>
+          <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(done.privateUrl)}>Copy link</Button>
         </div>
-      )}
+      </section>
+    );
+  }
+  if (!hold) {
+    return (
+      <div className="rounded bg-white p-3 shadow-sm">
+        {error ? <ErrorState error={error} /> : null}
+        <Button className="w-full" onClick={reserve}>Continue with {fmtTime(startAt, zone)}</Button>
+      </div>
+    );
+  }
+  const fields = fieldsOf(error);
+  return (
+    <form onSubmit={submit} className="space-y-3 rounded bg-white p-4 shadow-sm">
+      <h2 className="font-semibold">Your details</h2>
+      <p className="text-sm" role="timer">{hold.summary.service} with {hold.summary.doctor} at {fmtTime(hold.summary.startAt, zone)} — held for {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}</p>
+      <Field label="Full name" name="fullName" autoComplete="name" required maxLength={100} error={fields.fullName} />
+      <Field label="Phone number" name="phone" type="tel" autoComplete="tel" required error={fields.phone} />
+      <p className="text-xs text-slate-600">Your number is used only by the clinic to contact you about this visit.</p>
+      <Field label="I have read the clinic's privacy notice" name="privacy" type="checkbox" required error={fields.privacyAccepted} />
+      {error && !Object.keys(fields).length ? <ErrorState error={error} /> : null}
+      <div className="flex gap-2"><Button type="submit" disabled={left === 0}>Confirm booking</Button><Button variant="secondary" onClick={release}>Change time</Button></div>
+      {left === 0 && <p role="alert" className="text-sm text-red-700">Your hold has expired. Please choose a time again.</p>}
+    </form>
+  );
+}
+
+/** P-07 my booking: /c/:slug/b/:token — the token is sent only in the X-Access-Token header (ADR-010). */
+export function MyBookingPage() {
+  const { token } = useParams();
+  const [data, setData] = useState<PublicBooking | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => api<PublicBooking>('GET', '/public/booking', undefined, { 'x-access-token': token ?? '' }).then(setData, setError);
+  useEffect(() => void load(), [token]);
+  if (error && !data) return <Page><h1 className="text-xl font-semibold">This link is not valid</h1><p className="text-sm text-slate-600">It may have expired. Please contact the clinic.</p></Page>;
+  if (!data) return <Page><Loading /></Page>;
+  async function cancel() {
+    if (!window.confirm('Cancel this appointment?')) return;
+    setBusy(true);
+    try {
+      await api('POST', '/public/booking/cancel', {}, { 'x-access-token': token ?? '', 'idempotency-key': crypto.randomUUID() });
+      await load();
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  }
+  return (
+    <Page>
+      <h1 className="text-xl font-semibold">{data.clinic.name}</h1>
+      {data.clinic.suspended && <p className="rounded bg-amber-50 p-2 text-sm">This clinic is currently unavailable online. Please contact the clinic.</p>}
+      <dl className="grid grid-cols-3 gap-2 rounded bg-white p-4 text-sm shadow-sm">
+        <dt className="font-medium">Reference</dt><dd className="col-span-2 font-mono">{data.bookingReference}</dd>
+        <dt className="font-medium">Status</dt><dd className="col-span-2">{data.status.replace('_', ' ').toLowerCase()}</dd>
+        <dt className="font-medium">When</dt><dd className="col-span-2">{new Date(data.startAt).toLocaleString([], { timeZone: data.clinic.timezone, dateStyle: 'full', timeStyle: 'short' })}</dd>
+        <dt className="font-medium">Service</dt><dd className="col-span-2">{data.service.name} ({data.service.durationMin} min)</dd>
+        <dt className="font-medium">Doctor</dt><dd className="col-span-2">{data.doctor.displayName}</dd>
+        <dt className="font-medium">Patient</dt><dd className="col-span-2">{data.patient.firstName} · {data.patient.maskedPhone}</dd>
+      </dl>
+      {error ? <ErrorState error={error} /> : null}
+      {data.cancellation.allowed ? <Button variant="danger" disabled={busy} onClick={cancel}>Cancel appointment</Button>
+        : data.status === 'CONFIRMED' && <p className="text-sm">To change or cancel, please call {data.clinic.contactPhone ? <a className="underline" href={`tel:${data.clinic.contactPhone}`}>{data.clinic.contactPhone}</a> : 'the clinic'}.</p>}
+      {error ? <p className="text-xs text-slate-500">{messageOf(error)}</p> : null}
     </Page>
   );
 }

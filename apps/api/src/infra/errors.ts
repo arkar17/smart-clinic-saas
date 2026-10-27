@@ -49,6 +49,8 @@ function mapDatabaseError(err: unknown): AppError | null {
     if (err.code === 'P2002') return new AppError('VALIDATION_ERROR', 'This value is already in use.', { details: { target: err.meta?.target } });
   }
   const message = err instanceof Error ? err.message : '';
+  if (/appointment_no_overlap/.test(message)) return new AppError('SLOT_UNAVAILABLE', 'This time is no longer available. Please choose another.');
+  if (/P0001|invalid appointment transition/.test(message)) return new AppError('INVALID_TRANSITION');
   if (/23P01|exclusion constraint/.test(message)) return new AppError('VALIDATION_ERROR', 'Intervals must not overlap.');
   if (/23503|foreign key constraint/.test(message)) return notFound();
   if (/23514|check constraint|immutable after activation/.test(message)) return new AppError('VALIDATION_ERROR', 'The value violates a data rule.');

@@ -21,6 +21,7 @@ services:
       APP_ORIGIN: http://localhost:5173
       COOKIE_SECURE: "false"
       IP_HASH_PEPPER: change-me-local-development-only
+      IDEMPOTENCY_ENC_KEY: bG9jYWwtZGV2LW9ubHktaWRlbXBvdGVuY3kta2V5MzI=
     ports: ["3000:3000"]
     volumes: [".:/repo"]
     depends_on:

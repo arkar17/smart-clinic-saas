@@ -8,7 +8,8 @@ import { platformRoutes } from './modules/platform/index';
 import { clinicRoutes, serviceRoutes } from './modules/clinic/index';
 import { doctorRoutes } from './modules/scheduling/index';
 import { patientRoutes } from './modules/patients/index';
-import { publicRoutes } from './modules/booking/index';
+import { privateBookingRoutes, publicRoutes } from './modules/booking/index';
+import { appointmentRoutes } from './modules/appointments/index';
 
 export function createApp(deps: Deps) {
   const app = express();
@@ -35,6 +36,10 @@ export function createApp(deps: Deps) {
   app.use('/api/patients', patients.patients);
   app.use('/api/search', patients.search);
   app.use('/api/public/clinics', publicRoutes(deps));
+  app.use('/api/public/booking', privateBookingRoutes(deps));
+  const appts = appointmentRoutes(deps);
+  app.use('/api/appointments', appts.appointments);
+  app.use('/api/availability', appts.availability);
   app.use('/api', (_req, _res, next) => next(notFound()));
   app.use(errorHandler);
   return app;

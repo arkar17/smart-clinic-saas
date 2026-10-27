@@ -49,6 +49,48 @@ enum PatientSource {
   @@map("patient_source")
 }
 
+enum AppointmentChannel {
+  PUBLIC
+  STAFF
+
+  @@map("appointment_channel")
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  EXPIRED
+
+  @@map("appointment_status")
+}
+
+enum CancelActor {
+  PATIENT
+  STAFF
+  SYSTEM
+
+  @@map("cancel_actor")
+}
+
+enum AccessTokenPurpose {
+  BOOKING
+  QUEUE
+  DISPLAY
+
+  @@map("access_token_purpose")
+}
+
+enum IdempotencyState {
+  IN_PROGRESS
+  COMPLETED
+
+  @@map("idempotency_state")
+}
+
 enum ActorType {
   STAFF
   PUBLIC_PATIENT
@@ -145,6 +187,9 @@ model Clinic {
   availability  DoctorAvailability[]
   exceptions    ScheduleException[]
   patients      Patient[]
+  appointments  Appointment[]
+  accessTokens  PublicAccessToken[]
+  idempotency   IdempotencyRecord[]
   auditEvents   AuditLog[]
 
   @@map("clinic")
@@ -169,6 +214,9 @@ model ClinicMember {
   doctor    Doctor?
   closures  ClinicClosure[]
   exceptions ScheduleException[]
+  appointmentsCreated Appointment[] @relation("AppointmentCreatedBy")
+  appointmentsUpdated Appointment[] @relation("AppointmentUpdatedBy")
+  accessTokens        PublicAccessToken[]
 
   @@unique([clinicId, userId])
   @@unique([clinicId, id])
@@ -193,6 +241,7 @@ model Doctor {
   services     DoctorService[]
   availability DoctorAvailability[]
   exceptions   ScheduleException[]
+  appointments Appointment[]
 
   @@unique([clinicId, id])
   @@unique([clinicId, memberId])
@@ -247,8 +296,9 @@ model ClinicService {
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  clinic  Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
-  doctors DoctorService[]
+  clinic       Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctors      DoctorService[]
+  appointments Appointment[]
 
   @@unique([clinicId, id])
   @@map("clinic_service")
@@ -347,9 +397,101 @@ model Patient {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  appointments Appointment[]
 
   @@unique([clinicId, id])
   @@index([clinicId, phoneE164])
   @@map("patient")
+}
+
+// SC-2B (Arch 11.13): reservation holds (PENDING) and the appointment lifecycle (SRS 9.1–9.2).
+// The exclusion constraint, partial indexes, CHECKs and status guard trigger are hand-written SQL (ADR-006, ADR-016, ADR-019).
+model Appointment {
+  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId              String             @map("clinic_id") @db.Uuid
+  doctorId              String             @map("doctor_id") @db.Uuid
+  serviceId             String             @map("service_id") @db.Uuid
+  patientId             String?            @map("patient_id") @db.Uuid
+  channel               AppointmentChannel
+  status                AppointmentStatus  @default(PENDING)
+  serviceDate           DateTime           @map("service_date") @db.Date
+  startAt               DateTime           @map("start_at") @db.Timestamptz(6)
+  endAt                 DateTime           @map("end_at") @db.Timestamptz(6)
+  bookingReference      String?            @map("booking_reference") @db.VarChar(11)
+  reservationSecretHash Bytes?             @map("reservation_secret_hash")
+  holdExpiresAt         DateTime?          @map("hold_expires_at") @db.Timestamptz(6)
+  holdClientHash        Bytes?             @map("hold_client_hash")
+  holdIpHash            Bytes?             @map("hold_ip_hash")
+  confirmedAt           DateTime?          @map("confirmed_at") @db.Timestamptz(6)
+  checkedInAt           DateTime?          @map("checked_in_at") @db.Timestamptz(6)
+  checkInOverrideReason String?            @map("check_in_override_reason") @db.VarChar(200)
+  cancelledAt           DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  cancelledBy           CancelActor?       @map("cancelled_by")
+  cancelReason          String?            @map("cancel_reason") @db.VarChar(200)
+  noShowAt              DateTime?          @map("no_show_at") @db.Timestamptz(6)
+  completedAt           DateTime?          @map("completed_at") @db.Timestamptz(6)
+  expiredAt             DateTime?          @map("expired_at") @db.Timestamptz(6)
+  createdByMemberId     String?            @map("created_by_member_id") @db.Uuid
+  updatedByMemberId     String?            @map("updated_by_member_id") @db.Uuid
+  version               Int                @default(0)
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic       Clinic              @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctor       Doctor              @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "appointment_doctor_fkey")
+  service      ClinicService       @relation(fields: [clinicId, serviceId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "appointment_service_fkey")
+  patient      Patient?            @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "appointment_patient_fkey")
+  createdBy    ClinicMember?       @relation("AppointmentCreatedBy", fields: [clinicId, createdByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "appointment_created_by_fkey")
+  updatedBy    ClinicMember?       @relation("AppointmentUpdatedBy", fields: [clinicId, updatedByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "appointment_updated_by_fkey")
+  accessTokens PublicAccessToken[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, bookingReference])
+  @@index([clinicId, serviceDate, doctorId])
+  @@index([clinicId, patientId])
+  @@map("appointment")
+}
+
+// SC-2B (Arch 11.16): hashed private-link tokens. queue_entry_id gets its composite FK when queue_entry exists (SC-3).
+model PublicAccessToken {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId          String             @map("clinic_id") @db.Uuid
+  purpose           AccessTokenPurpose
+  tokenHash         Bytes              @unique @map("token_hash")
+  appointmentId     String?            @map("appointment_id") @db.Uuid
+  queueEntryId      String?            @map("queue_entry_id") @db.Uuid
+  label             String?            @db.VarChar(60)
+  expiresAt         DateTime?          @map("expires_at") @db.Timestamptz(6)
+  revokedAt         DateTime?          @map("revoked_at") @db.Timestamptz(6)
+  revokeReason      String?            @map("revoke_reason") @db.VarChar(40)
+  lastUsedAt        DateTime?          @map("last_used_at") @db.Timestamptz(6)
+  createdByMemberId String?            @map("created_by_member_id") @db.Uuid
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  clinic      Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  appointment Appointment?  @relation(fields: [clinicId, appointmentId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "public_access_token_appointment_fkey")
+  createdBy   ClinicMember? @relation(fields: [clinicId, createdByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "public_access_token_created_by_fkey")
+
+  @@unique([clinicId, id])
+  @@map("public_access_token")
+}
+
+// SC-2B (Arch 11.19): public POST results kept 24 h for identical replays; bodies AES-256-GCM encrypted (ADR-011).
+model IdempotencyRecord {
+  clinicId        String           @map("clinic_id") @db.Uuid
+  endpoint        String           @db.VarChar(60)
+  idemKey         String           @map("idem_key") @db.Uuid
+  requestHash     Bytes            @map("request_hash")
+  state           IdempotencyState @default(IN_PROGRESS)
+  responseStatus  Int?             @map("response_status") @db.SmallInt
+  responseBodyEnc Bytes?           @map("response_body_enc")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt       DateTime         @map("expires_at") @db.Timestamptz(6)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+
+  @@id([clinicId, endpoint, idemKey])
+  @@index([expiresAt])
+  @@map("idempotency_record")
 }

@@ -1,4 +1,5 @@
 import type { AddressInfo } from 'node:net';
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { loadEnv } from '@sc/config';
 import { PrismaClient } from '../src/generated/prisma/index.js';
@@ -16,7 +17,7 @@ export const clock = new FixedClock(new Date('2026-11-02T03:00:00Z')); // Monday
 let server: Server | undefined;
 let base = '';
 export async function startApp() {
-  const env = loadEnv({ ...process.env, IP_HASH_PEPPER: 'test-pepper-not-secret', COOKIE_SECURE: 'false', APP_ORIGIN: ORIGIN, LOG_LEVEL: 'silent', LOGIN_RATE_LIMIT_PER_10_MIN: '100000', PUBLIC_RATE_LIMIT_PER_MIN: '100000' });
+  const env = loadEnv({ ...process.env, IP_HASH_PEPPER: 'test-pepper-not-secret', COOKIE_SECURE: 'false', APP_ORIGIN: ORIGIN, LOG_LEVEL: 'silent', LOGIN_RATE_LIMIT_PER_10_MIN: '100000', PUBLIC_RATE_LIMIT_PER_MIN: '100000', HOLD_RATE_LIMIT_PER_MIN: '100000', TOKEN_FAILURE_LIMIT_PER_10_MIN: '100000', IDEMPOTENCY_ENC_KEY: Buffer.alloc(32, 7).toString('base64') });
   const app = createApp({ prisma, clock, env, log: createLogger('silent') });
   server = app.listen(0);
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -26,7 +27,7 @@ export async function stopApp() {
   await prisma.$disconnect();
 }
 
-const TABLES = ['audit_log', 'patient', 'session', 'schedule_exception', 'doctor_availability', 'doctor_service', 'clinic_service', 'clinic_closure', 'clinic_business_hour', 'doctor', 'clinic_member', 'clinic', 'app_user'];
+const TABLES = ['audit_log', 'idempotency_record', 'public_access_token', 'appointment', 'patient', 'session', 'schedule_exception', 'doctor_availability', 'doctor_service', 'clinic_service', 'clinic_closure', 'clinic_business_hour', 'doctor', 'clinic_member', 'clinic', 'app_user'];
 /** Destroys fixtures created by the test runner in the disposable test database only. */
 export async function resetDb() {
   await prisma.$executeRawUnsafe(`TRUNCATE ${TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);
@@ -37,20 +38,31 @@ export interface Res { status: number; body: any; headers: Headers } // eslint-d
 
 /** Minimal browser-like client: cookie jar, Origin, CSRF and X-Clinic-Id headers. */
 export class Client {
-  cookie = '';
+  cookies: Record<string, string> = {};
   csrf = '';
   clinicId: string | null = null;
   origin: string | null = ORIGIN;
 
+  get cookie() {
+    return Object.entries(this.cookies).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join('; ');
+  }
+  set cookie(v: string) {
+    this.cookies = v ? { sc_sid: v.replace(/^sc_sid=/, '') } : {};
+  }
+
   async req(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<Res> {
     const headers: Record<string, string> = { 'content-type': 'application/json', ...extra };
+    if (method !== 'GET' && path.startsWith('/api/public') && !('idempotency-key' in extra)) headers['idempotency-key'] = randomUUID();
     if (this.origin) headers.origin = this.origin;
     if (this.cookie) headers.cookie = this.cookie;
     if (this.csrf && !('x-csrf-token' in extra)) headers['x-csrf-token'] = this.csrf;
     if (this.clinicId && !('x-clinic-id' in extra)) headers['x-clinic-id'] = this.clinicId;
     const res = await fetch(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-    const set = res.headers.getSetCookie().find((c) => c.startsWith('sc_sid='));
-    if (set) this.cookie = set.split(';')[0]!.replace(/^sc_sid=$/, '');
+    for (const set of res.headers.getSetCookie()) {
+      const [pair] = set.split(';');
+      const i = pair!.indexOf('=');
+      this.cookies[pair!.slice(0, i)] = pair!.slice(i + 1);
+    }
     const text = await res.text();
     const parsed = text ? JSON.parse(text) : null;
     if (parsed?.csrfToken) this.csrf = parsed.csrfToken;

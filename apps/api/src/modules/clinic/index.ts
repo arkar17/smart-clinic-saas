@@ -195,12 +195,12 @@ export function serviceRoutes(deps: Deps): Router {
     });
     res.json(view(await load(ctx.clinicId, id)));
   }));
-  // FR-SVC-003: delete only while unreferenced. Appointment/queue references (RESTRICT FKs) arrive in SC-2/SC-3;
-  // a reference then fails the delete with 23503 and the service must be deactivated instead.
+  // FR-SVC-003: delete only while unreferenced (appointments now; queue entries join in SC-3); otherwise deactivate.
   r.delete('/:id', ...staffChain(deps, 'CAP-CLN-04', 'write'), h(async (req, res) => {
     const ctx = req.clinic!;
     const id = uuidParam(req, 'id');
     const now = clock.now();
+    if (await prisma.appointment.count({ where: { clinicId: ctx.clinicId, serviceId: id } })) throw new AppError('VALIDATION_ERROR', 'This service has appointment history and cannot be deleted. Deactivate it instead.');
     await prisma.$transaction(async (tx) => {
       const n = await tx.clinicService.deleteMany({ where: { id, clinicId: ctx.clinicId } });
       if (n.count === 0) throw notFound();

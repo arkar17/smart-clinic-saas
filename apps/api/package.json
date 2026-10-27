@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
+    "worker": "tsx src/worker.ts",
     "typecheck": "tsc -p tsconfig.json",
     "prisma:generate": "prisma generate",
     "db:verify": "tsx scripts/db-verify.ts",

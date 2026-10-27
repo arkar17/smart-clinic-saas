@@ -41,7 +41,19 @@
     "patient_phone_presence_check",
     "patient_phone_format_check",
     "patient_name_check",
-    "patient_clinic_id_fkey"
+    "patient_clinic_id_fkey",
+    "appointment_range_check",
+    "appointment_pending_check",
+    "appointment_confirmed_check",
+    "appointment_reference_format_check",
+    "appointment_no_overlap",
+    "appointment_doctor_fkey",
+    "appointment_service_fkey",
+    "appointment_patient_fkey",
+    "public_access_token_binding_check",
+    "public_access_token_expiry_check",
+    "public_access_token_appointment_fkey",
+    "idempotency_record_completed_check"
   ],
   "indexes": [
     "session_user_live_idx",
@@ -52,12 +64,22 @@
     "patient_match_key",
     "patient_clinic_last4_idx",
     "patient_name_trgm_idx",
-    "patient_clinic_id_id_key"
+    "patient_clinic_id_id_key",
+    "appointment_one_hold_per_client",
+    "appointment_pending_expiry_idx",
+    "appointment_clinic_id_booking_reference_key",
+    "public_access_token_one_booking",
+    "public_access_token_one_queue",
+    "public_access_token_token_hash_key"
   ],
   "triggers": [
     {
       "table": "clinic",
       "name": "clinic_lock_after_activation"
+    },
+    {
+      "table": "appointment",
+      "name": "appointment_status_guard"
     }
   ],
   "privileges": [
@@ -100,6 +122,18 @@
     {
       "role": "sc_app",
       "table": "patient",
+      "privilege": "INSERT",
+      "expected": true
+    },
+    {
+      "role": "sc_app",
+      "table": "appointment",
+      "privilege": "UPDATE",
+      "expected": true
+    },
+    {
+      "role": "sc_app",
+      "table": "idempotency_record",
       "privilege": "INSERT",
       "expected": true
     }
