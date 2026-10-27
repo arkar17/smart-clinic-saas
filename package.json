@@ -1,0 +1,27 @@
+{
+  "name": "smart-clinic",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "pnpm -r typecheck",
+    "test:unit": "vitest run --project unit",
+    "test:int": "vitest run --project integration",
+    "test": "vitest run",
+    "db:verify": "pnpm --filter @sc/api db:verify",
+    "gen:permissions": "pnpm --filter @sc/contracts gen:permissions"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2",
+    "vitest": "^3.0.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["argon2", "@prisma/client", "@prisma/engines", "prisma", "esbuild"]
+  }
+}

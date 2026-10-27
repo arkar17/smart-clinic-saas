@@ -1,0 +1,38 @@
+# SC1-BE-02 development stack: db (PostgreSQL 16), api, web. The worker service is added in SC-2.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: smartclinic
+      POSTGRES_PASSWORD: smartclinic
+      POSTGRES_DB: smartclinic_dev
+    ports: ["5432:5432"]
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartclinic -d smartclinic_dev"]
+      interval: 5s
+      retries: 10
+  api:
+    image: node:22-bookworm
+    working_dir: /repo
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @sc/api dev"
+    environment:
+      DATABASE_URL: postgresql://smartclinic:smartclinic@db:5432/smartclinic_dev
+      APP_ORIGIN: http://localhost:5173
+      COOKIE_SECURE: "false"
+      IP_HASH_PEPPER: change-me-local-development-only
+    ports: ["3000:3000"]
+    volumes: [".:/repo"]
+    depends_on:
+      db: { condition: service_healthy }
+  web:
+    image: node:22-bookworm
+    working_dir: /repo
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @sc/web dev"
+    environment:
+      API_URL: http://api:3000
+    ports: ["5173:5173"]
+    volumes: [".:/repo"]
+    depends_on: [api]
+volumes:
+  db-data:

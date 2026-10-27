@@ -1,7 +1,7 @@
 # CLAUDE.md — Smart Clinic (Multi-Clinic Management SaaS)
 
 Baseline: **v1.1 revision B** — approved docs in `docs/baseline-v1.1/` (read-only; never edit).
-Current gate: **none started.** SC-1 begins only after explicit Product Owner kickoff approval.
+Current gate: **SC-1 — Foundation and Clinic Isolation** (approved 27 Oct 2026; cap $7). Do not start SC-2 without approval.
 
 ## Project overview
 
@@ -107,7 +107,7 @@ Per gate, read the gate's traceability rows plus only the specific SRS/architect
   No SMS/email providers at all. Release target is a local Docker release.
 - No real patient data, ever.
 
-## Commands (to be created in SC-1)
+## Commands
 
 `pnpm lint` · `pnpm typecheck` · `pnpm test:unit <path>` · `pnpm test:int <path>` · `pnpm db:verify`
 

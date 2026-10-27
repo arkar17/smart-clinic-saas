@@ -1,0 +1,324 @@
+// Smart Clinic — SC-1 tables (Arch 11.1–11.11, 11.17). Hand-written SQL objects live in the migrations (ADR-019)
+// and are listed in prisma/db-verify-manifest.json.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlatformRole {
+  NONE
+  PLATFORM_ADMIN
+
+  @@map("platform_role")
+}
+
+enum ClinicRole {
+  CLINIC_ADMIN
+  RECEPTIONIST
+  DOCTOR
+
+  @@map("clinic_role")
+}
+
+enum ClinicStatus {
+  PENDING_SETUP
+  ACTIVE
+  SUSPENDED
+
+  @@map("clinic_status")
+}
+
+enum ScheduleExceptionKind {
+  UNAVAILABLE
+  MODIFIED_HOURS
+
+  @@map("schedule_exception_kind")
+}
+
+enum ActorType {
+  STAFF
+  PUBLIC_PATIENT
+  SYSTEM
+
+  @@map("actor_type")
+}
+
+model User {
+  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email              String       @unique @db.Citext
+  displayName        String       @map("display_name") @db.VarChar(100)
+  passwordHash       String       @map("password_hash")
+  platformRole       PlatformRole @default(NONE) @map("platform_role")
+  isActive           Boolean      @default(true) @map("is_active")
+  deactivationReason String?      @map("deactivation_reason") @db.VarChar(200)
+  mustChangePassword Boolean      @default(true) @map("must_change_password")
+  failedLoginCount   Int          @default(0) @map("failed_login_count") @db.SmallInt
+  lockedUntil        DateTime?    @map("locked_until") @db.Timestamptz(6)
+  passwordChangedAt  DateTime?    @map("password_changed_at") @db.Timestamptz(6)
+  lastLoginAt        DateTime?    @map("last_login_at") @db.Timestamptz(6)
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  memberships    ClinicMember[]
+  sessions       Session[]
+  createdClinics Clinic[]
+  auditEvents    AuditLog[]
+
+  @@map("app_user")
+}
+
+model Session {
+  idHash            Bytes     @id @map("id_hash")
+  userId            String    @map("user_id") @db.Uuid
+  csrfSecret        Bytes     @map("csrf_secret")
+  activeClinicId    String?   @map("active_clinic_id") @db.Uuid
+  activeMemberId    String?   @map("active_member_id") @db.Uuid
+  selectedAt        DateTime? @map("selected_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt        DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  idleExpiresAt     DateTime  @map("idle_expires_at") @db.Timestamptz(6)
+  absoluteExpiresAt DateTime  @map("absolute_expires_at") @db.Timestamptz(6)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokeReason      String?   @map("revoke_reason") @db.VarChar(40)
+  ipHash            Bytes?    @map("ip_hash")
+  userAgent         String?   @map("user_agent") @db.VarChar(255)
+
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeMembership ClinicMember? @relation(fields: [activeClinicId, activeMemberId, userId], references: [clinicId, id, userId], onDelete: Restrict, onUpdate: Restrict, map: "session_active_membership_fkey")
+
+  @@index([absoluteExpiresAt])
+  @@map("session")
+}
+
+model Clinic {
+  id                    String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug                  String       @unique @db.Citext
+  name                  String       @db.VarChar(120)
+  address               String?      @db.VarChar(300)
+  contactPhoneE164      String?      @map("contact_phone_e164") @db.VarChar(16)
+  timezone              String       @db.VarChar(64)
+  defaultPhoneRegion    String       @map("default_phone_region") @db.Char(2)
+  status                ClinicStatus @default(PENDING_SETUP)
+  statusReason          String?      @map("status_reason") @db.VarChar(200)
+  activatedAt           DateTime?    @map("activated_at") @db.Timestamptz(6)
+  suspendedAt           DateTime?    @map("suspended_at") @db.Timestamptz(6)
+  privacyNotice         String?      @map("privacy_notice")
+  slotGranularityMin    Int          @default(15) @map("slot_granularity_min") @db.SmallInt
+  holdMinutes           Int          @default(10) @map("hold_minutes") @db.SmallInt
+  minNoticeMin          Int          @default(60) @map("min_notice_min") @db.SmallInt
+  horizonDays           Int          @default(30) @map("horizon_days") @db.SmallInt
+  cancelCutoffMin       Int          @default(120) @map("cancel_cutoff_min") @db.SmallInt
+  checkinBeforeMin      Int          @default(60) @map("checkin_before_min") @db.SmallInt
+  checkinAfterMin       Int          @default(30) @map("checkin_after_min") @db.SmallInt
+  noShowGraceMin        Int          @default(15) @map("no_show_grace_min") @db.SmallInt
+  maxActiveBookings     Int          @default(3) @map("max_active_bookings") @db.SmallInt
+  walkinEnabled         Boolean      @default(false) @map("walkin_enabled")
+  walkinDailyCapacity   Int?         @map("walkin_daily_capacity") @db.SmallInt
+  walkinOpensOffsetMin  Int          @default(0) @map("walkin_opens_offset_min") @db.SmallInt
+  walkinClosesBeforeMin Int          @default(60) @map("walkin_closes_before_min") @db.SmallInt
+  version               Int          @default(0)
+  createdByUserId       String?      @map("created_by_user_id") @db.Uuid
+  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy     User?                @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  members       ClinicMember[]
+  doctors       Doctor[]
+  businessHours ClinicBusinessHour[]
+  closures      ClinicClosure[]
+  services      ClinicService[]
+  doctorService DoctorService[]
+  availability  DoctorAvailability[]
+  exceptions    ScheduleException[]
+  auditEvents   AuditLog[]
+
+  @@map("clinic")
+}
+
+model ClinicMember {
+  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId           String       @map("clinic_id") @db.Uuid
+  userId             String       @map("user_id") @db.Uuid
+  roles              ClinicRole[]
+  isActive           Boolean      @default(true) @map("is_active")
+  deactivatedAt      DateTime?    @map("deactivated_at") @db.Timestamptz(6)
+  createdByMemberId  String?      @map("created_by_member_id") @db.Uuid
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic    Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdBy ClinicMember? @relation("MemberCreatedBy", fields: [clinicId, createdByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "clinic_member_created_by_fkey")
+  created   ClinicMember[] @relation("MemberCreatedBy")
+  sessions  Session[]
+  doctor    Doctor?
+  closures  ClinicClosure[]
+  exceptions ScheduleException[]
+
+  @@unique([clinicId, userId])
+  @@unique([clinicId, id])
+  @@unique([clinicId, id, userId])
+  @@index([userId])
+  @@map("clinic_member")
+}
+
+model Doctor {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId     String   @map("clinic_id") @db.Uuid
+  memberId     String?  @unique @map("member_id") @db.Uuid
+  displayName  String   @map("display_name") @db.VarChar(100)
+  titleLabel   String?  @map("title_label") @db.VarChar(80)
+  isActive     Boolean  @default(true) @map("is_active")
+  displayOrder Int      @default(0) @map("display_order") @db.SmallInt
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic       Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  member       ClinicMember?        @relation(fields: [clinicId, memberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "doctor_member_fkey")
+  services     DoctorService[]
+  availability DoctorAvailability[]
+  exceptions   ScheduleException[]
+
+  @@unique([clinicId, id])
+  @@unique([clinicId, memberId])
+  @@map("doctor")
+}
+
+model ClinicBusinessHour {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String   @map("clinic_id") @db.Uuid
+  weekday   Int      @db.SmallInt
+  startMin  Int      @map("start_min") @db.SmallInt
+  endMin    Int      @map("end_min") @db.SmallInt
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+
+  @@unique([clinicId, id])
+  @@map("clinic_business_hour")
+}
+
+model ClinicClosure {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId          String        @map("clinic_id") @db.Uuid
+  startDate         DateTime      @map("start_date") @db.Date
+  endDate           DateTime      @map("end_date") @db.Date
+  startMin          Int?          @map("start_min") @db.SmallInt
+  endMin            Int?          @map("end_min") @db.SmallInt
+  label             String?       @db.VarChar(80)
+  createdByMemberId String?       @map("created_by_member_id") @db.Uuid
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic    Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  createdBy ClinicMember? @relation(fields: [clinicId, createdByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "clinic_closure_created_by_fkey")
+
+  @@unique([clinicId, id])
+  @@index([clinicId, startDate, endDate])
+  @@map("clinic_closure")
+}
+
+model ClinicService {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId             String   @map("clinic_id") @db.Uuid
+  name                 String   @db.VarChar(80)
+  description          String?  @db.VarChar(300)
+  durationMin          Int      @map("duration_min") @db.SmallInt
+  onlineBookingEnabled Boolean  @map("online_booking_enabled")
+  walkInEnabled        Boolean  @map("walk_in_enabled")
+  isActive             Boolean  @default(true) @map("is_active")
+  displayOrder         Int      @default(0) @map("display_order") @db.SmallInt
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic  Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctors DoctorService[]
+
+  @@unique([clinicId, id])
+  @@map("clinic_service")
+}
+
+model DoctorService {
+  clinicId  String   @map("clinic_id") @db.Uuid
+  doctorId  String   @map("doctor_id") @db.Uuid
+  serviceId String   @map("service_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  clinic  Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctor  Doctor        @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict, map: "doctor_service_doctor_fkey")
+  service ClinicService @relation(fields: [clinicId, serviceId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict, map: "doctor_service_service_fkey")
+
+  @@id([doctorId, serviceId])
+  @@index([clinicId, serviceId])
+  @@map("doctor_service")
+}
+
+model DoctorAvailability {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String   @map("clinic_id") @db.Uuid
+  doctorId  String   @map("doctor_id") @db.Uuid
+  weekday   Int      @db.SmallInt
+  startMin  Int      @map("start_min") @db.SmallInt
+  endMin    Int      @map("end_min") @db.SmallInt
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctor Doctor @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict, map: "doctor_availability_doctor_fkey")
+
+  @@unique([clinicId, id])
+  @@map("doctor_availability")
+}
+
+model ScheduleException {
+  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId          String                @map("clinic_id") @db.Uuid
+  doctorId          String                @map("doctor_id") @db.Uuid
+  exceptionDate     DateTime              @map("exception_date") @db.Date
+  kind              ScheduleExceptionKind
+  startMin          Int?                  @map("start_min") @db.SmallInt
+  endMin            Int?                  @map("end_min") @db.SmallInt
+  reason            String?               @db.VarChar(200)
+  createdByMemberId String?               @map("created_by_member_id") @db.Uuid
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic    Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctor    Doctor        @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Cascade, onUpdate: Restrict, map: "schedule_exception_doctor_fkey")
+  createdBy ClinicMember? @relation(fields: [clinicId, createdByMemberId], references: [clinicId, id], onDelete: Restrict, onUpdate: Restrict, map: "schedule_exception_created_by_fkey")
+
+  @@unique([clinicId, id])
+  @@index([clinicId, doctorId, exceptionDate])
+  @@map("schedule_exception")
+}
+
+model AuditLog {
+  id          BigInt    @id @default(autoincrement())
+  occurredAt  DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  clinicId    String?   @map("clinic_id") @db.Uuid
+  actorType   ActorType @map("actor_type")
+  actorUserId String?   @map("actor_user_id") @db.Uuid
+  action      String    @db.VarChar(60)
+  entityType  String    @map("entity_type") @db.VarChar(40)
+  entityId    String?   @map("entity_id") @db.Uuid
+  fromStatus  String?   @map("from_status") @db.VarChar(30)
+  toStatus    String?   @map("to_status") @db.VarChar(30)
+  reason      String?   @db.VarChar(200)
+  requestId   String?   @map("request_id") @db.Uuid
+  ipHash      Bytes?    @map("ip_hash")
+  changes     Json?
+
+  clinic    Clinic? @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  actorUser User?   @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([clinicId, occurredAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@map("audit_log")
+}

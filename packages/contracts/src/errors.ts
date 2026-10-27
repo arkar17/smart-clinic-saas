@@ -1,0 +1,34 @@
+// Arch 15 error codes (SC-1 subset plus codes later gates reuse) and the error envelope (Arch 14.1).
+export const ERROR_STATUS = {
+  BAD_REQUEST: 400,
+  UNAUTHENTICATED: 401,
+  FORBIDDEN: 403,
+  CSRF_INVALID: 403,
+  PASSWORD_CHANGE_REQUIRED: 403,
+  CLINIC_READ_ONLY: 403,
+  CLINIC_SELECTION_REQUIRED: 403,
+  NO_ACTIVE_MEMBERSHIP: 403,
+  NOT_FOUND: 404,
+  CLINIC_CONTEXT_MISMATCH: 409,
+  VERSION_CONFLICT: 409,
+  INVALID_TRANSITION: 409,
+  SETUP_INCOMPLETE: 409,
+  LAST_CLINIC_ADMIN: 409,
+  VALIDATION_ERROR: 422,
+  RATE_LIMITED: 429,
+  ACCOUNT_LOCKED: 429,
+  INTERNAL: 500,
+} as const;
+export type ErrorCode = keyof typeof ERROR_STATUS;
+
+export interface ErrorEnvelope {
+  error: {
+    code: ErrorCode;
+    message: string;
+    fields?: Record<string, string[]>;
+    details?: unknown;
+    requestId: string;
+    retryAfterSec?: number;
+    current?: { status?: string; version: number };
+  };
+}

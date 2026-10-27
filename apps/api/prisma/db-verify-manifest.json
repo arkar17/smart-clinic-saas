@@ -1,0 +1,50 @@
+{
+  "comment": "Hand-written database objects that must exist after `prisma migrate deploy` (ADR-019, TC-NFR-007). Extend with every migration.",
+  "extensions": ["btree_gist", "citext", "pg_trgm", "pgcrypto"],
+  "roles": ["sc_owner", "sc_app"],
+  "constraints": [
+    "app_user_failed_login_count_check",
+    "app_user_deactivation_reason_check",
+    "session_selection_pair_check",
+    "session_active_membership_fkey",
+    "clinic_slug_check",
+    "clinic_phone_region_check",
+    "clinic_settings_check",
+    "clinic_walkin_capacity_check",
+    "clinic_suspend_reason_check",
+    "clinic_member_roles_check",
+    "clinic_member_created_by_fkey",
+    "doctor_member_fkey",
+    "clinic_business_hour_range_check",
+    "clinic_business_hour_no_overlap",
+    "clinic_closure_range_check",
+    "clinic_closure_created_by_fkey",
+    "clinic_service_duration_check",
+    "clinic_service_name_check",
+    "doctor_service_doctor_fkey",
+    "doctor_service_service_fkey",
+    "doctor_availability_range_check",
+    "doctor_availability_no_overlap",
+    "doctor_availability_doctor_fkey",
+    "schedule_exception_range_check",
+    "schedule_exception_modified_no_overlap",
+    "schedule_exception_doctor_fkey",
+    "schedule_exception_created_by_fkey"
+  ],
+  "indexes": [
+    "session_user_live_idx",
+    "session_active_member_live_idx",
+    "clinic_member_clinic_id_user_id_key",
+    "clinic_member_clinic_id_id_user_id_key",
+    "doctor_member_id_key"
+  ],
+  "triggers": [{ "table": "clinic", "name": "clinic_lock_after_activation" }],
+  "privileges": [
+    { "role": "sc_app", "table": "audit_log", "privilege": "INSERT", "expected": true },
+    { "role": "sc_app", "table": "audit_log", "privilege": "SELECT", "expected": true },
+    { "role": "sc_app", "table": "audit_log", "privilege": "UPDATE", "expected": false },
+    { "role": "sc_app", "table": "audit_log", "privilege": "DELETE", "expected": false },
+    { "role": "sc_app", "table": "audit_log", "privilege": "TRUNCATE", "expected": false },
+    { "role": "sc_app", "table": "clinic", "privilege": "UPDATE", "expected": true }
+  ]
+}

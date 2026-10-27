@@ -1,0 +1,28 @@
+import { z } from 'zod';
+
+/** Server configuration from environment variables (see .env.example). Secrets never have defaults in production. */
+const EnvSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: z.coerce.number().int().default(3000),
+  DATABASE_URL: z.string().min(1),
+  APP_ORIGIN: z.string().url().default('http://localhost:5173'),
+  COOKIE_SECURE: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  IP_HASH_PEPPER: z.string().min(16),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  TRUST_PROXY: z.coerce.number().int().default(1),
+  LOGIN_RATE_LIMIT_PER_10_MIN: z.coerce.number().int().default(20),
+});
+export type Env = z.infer<typeof EnvSchema>;
+
+export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
+  return EnvSchema.parse(source);
+}
+
+/** A-024 session lifetimes and FR-SEC-003 lockout parameters. */
+export const SESSION_IDLE_MIN = 60;
+export const SESSION_ABSOLUTE_HOURS = 12;
+export const SESSION_TOUCH_INTERVAL_SEC = 60;
+export const LOCKOUT_MAX_FAILURES = 5;
+export const LOCKOUT_WINDOW_MIN = 15;
+export const LOCKOUT_DURATION_MIN = 15;
+export const MAX_INTERVALS_PER_DAY = 4;
