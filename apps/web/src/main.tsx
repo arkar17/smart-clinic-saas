@@ -5,7 +5,7 @@ import './index.css';
 import { AuthProvider } from './auth';
 import { ToastProvider } from './components';
 import { ChangePasswordPage, LoginPage, SelectClinicPage } from './pages/auth';
-import { AppHome, AppShell } from './pages/shell';
+import { AppShell } from './pages/shell';
 import { DoctorsPage, HoursPage, ServicesPage, SettingsPage, StaffPage } from './pages/admin';
 import { PlatformPage } from './pages/platform';
 import { MySchedulePage } from './pages/doctor';
@@ -13,6 +13,7 @@ import { BookPage, MyBookingPage, PortalPage } from './pages/public';
 import { AppointmentsPage } from './pages/appointments';
 import { JoinQueuePage, QueueStatusPage } from './pages/queuePublic';
 import { DoctorQueuePage, QueueBoardPage } from './pages/queueStaff';
+import { DashboardPage, ReportsPage } from './pages/dashboard';
 
 const Placeholder = ({ text }: { text: string }) => <main className="p-8 text-center text-slate-600">{text}</main>;
 
@@ -28,7 +29,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/app/change-password" element={<ChangePasswordPage />} />
             <Route path="/app/select-clinic" element={<SelectClinicPage />} />
             <Route path="/app" element={<AppShell realm="app" />}>
-              <Route index element={<AppHome />} />
+              <Route index element={<DashboardPage />} />
+              <Route path="reports" element={<ReportsPage />} />
               <Route path="appointments" element={<AppointmentsPage />} />
               <Route path="queue" element={<QueueBoardPage />} />
               <Route path="my-queue" element={<DoctorQueuePage />} />

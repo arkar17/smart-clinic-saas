@@ -9,9 +9,9 @@ export function Field({ label, error, ...props }: InputHTMLAttributes<HTMLInputE
     <label htmlFor={id} className="block text-sm">
       <span className="font-medium">{label}</span>
       {props.type === 'checkbox' ? (
-        <input id={id} {...props} className="ml-2 align-middle" />
+        <input id={id} {...props} className="ml-2 h-5 w-5 align-middle" />
       ) : (
-        <input id={id} {...props} aria-invalid={!!error} className="mt-1 block w-full rounded border border-slate-300 px-2 py-1.5 focus:outline-2 focus:outline-brand aria-[invalid=true]:border-red-500" />
+        <input id={id} {...props} aria-invalid={!!error} className="mt-1 block min-h-11 w-full rounded border border-slate-300 px-2 py-2 focus:outline-2 focus:outline-brand aria-[invalid=true]:border-red-500" />
       )}
       {error?.map((e) => <span key={e} role="alert" className="block text-xs text-red-600">{e}</span>)}
     </label>
@@ -22,7 +22,7 @@ export function Select({ label, options, ...props }: SelectHTMLAttributes<HTMLSe
   return (
     <label className="block text-sm">
       <span className="font-medium">{label}</span>
-      <select {...props} className="mt-1 block w-full rounded border border-slate-300 px-2 py-1.5">
+      <select {...props} className="mt-1 block min-h-11 w-full rounded border border-slate-300 px-2 py-2">
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </label>
@@ -31,13 +31,13 @@ export function Select({ label, options, ...props }: SelectHTMLAttributes<HTMLSe
 
 export function Button({ variant = 'primary', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' }) {
   const styles = { primary: 'bg-brand text-white hover:bg-brand-dark', secondary: 'border border-slate-300 bg-white hover:bg-slate-100', danger: 'bg-red-600 text-white hover:bg-red-700' };
-  return <button type="button" {...props} className={`rounded px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${styles[variant]} ${props.className ?? ''}`} />;
+  return <button type="button" {...props} className={`min-h-11 rounded px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50 ${styles[variant]} ${props.className ?? ''}`} />;
 }
 
 export function DataTable<T>({ rows, columns, empty = 'Nothing here yet.' }: { rows: T[]; columns: { header: string; cell: (row: T) => ReactNode }[]; empty?: string }) {
   if (!rows.length) return <EmptyState text={empty} />;
   return (
-    <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded border border-slate-200 bg-white focus-visible:outline-2 focus-visible:outline-brand" tabIndex={0} role="region" aria-label="Scrollable table">
       <table className="min-w-full text-sm">
         <thead className="bg-slate-100 text-left">
           <tr>{columns.map((c) => <th key={c.header} scope="col" className="px-3 py-2 font-semibold">{c.header}</th>)}</tr>
@@ -57,7 +57,7 @@ export function Dialog({ open, title, onClose, children }: { open: boolean; titl
     else ref.current?.close();
   }, [open]);
   return (
-    <dialog ref={ref} onClose={onClose} className="w-full max-w-lg rounded-lg p-0 backdrop:bg-black/40" aria-labelledby="dialog-title">
+    <dialog ref={ref} onClose={onClose} className="max-h-[90vh] w-[calc(100%-1rem)] max-w-lg overflow-y-auto rounded-lg p-0 backdrop:bg-black/40" aria-labelledby="dialog-title">
       <div className="p-4">
         <h2 id="dialog-title" className="mb-3 text-lg font-semibold">{title}</h2>
         {children}

@@ -66,7 +66,7 @@ describe('strict tenant isolation (TC-SEC-001, TC-SEC-002, TC-SEC-012)', () => {
     }
     const list = await pa.get('/api/platform/clinics');
     expect(list.status).toBe(200);
-    expect(Object.keys(list.body.items[0]).sort()).toEqual(['activatedAt', 'activeMembershipCount', 'createdAt', 'id', 'name', 'slug', 'status', 'statusReason', 'timezone']);
+    expect(Object.keys(list.body.items[0]).sort()).toEqual(['activatedAt', 'activeMembershipCount', 'appointmentsLast30Days', 'createdAt', 'id', 'name', 'queueVisitsLast30Days', 'slug', 'status', 'statusReason', 'timezone']);
     const staff = await login('admin.a@example.test');
     expect((await staff.get('/api/platform/clinics')).status).toBe(403);
   });

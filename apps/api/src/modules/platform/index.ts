@@ -33,8 +33,14 @@ export function platformRoutes(deps: Deps): Router {
 
   r.get('/clinics', ...platformChain(deps, 'CAP-PLT-03'), h(async (_req, res) => {
     const clinics = await prisma.clinic.findMany({ orderBy: { createdAt: 'desc' }, include: { _count: { select: { members: { where: { isActive: true } } } } } });
-    // Appointment aggregates are added with the appointment tables in SC-2.
-    res.json({ items: clinics.map((c) => clinicView(c, c._count.members)) });
+    // FR-PLT-004 aggregate counts only (no patient-level data): this month's confirmed appointments and queue visits.
+    const since = new Date(clock.now().getTime() - 30 * 86_400_000);
+    const [appts, visits] = await Promise.all([
+      prisma.appointment.groupBy({ by: ['clinicId'], where: { confirmedAt: { gte: since } }, _count: true }),
+      prisma.queueEntry.groupBy({ by: ['clinicId'], where: { registeredAt: { gte: since } }, _count: true }),
+    ]);
+    const count = (rows: { clinicId: string; _count: number }[], id: string) => rows.find((r) => r.clinicId === id)?._count ?? 0;
+    res.json({ items: clinics.map((c) => ({ ...clinicView(c, c._count.members), appointmentsLast30Days: count(appts, c.id), queueVisitsLast30Days: count(visits, c.id) })) });
   }));
 
   r.post('/clinics', ...platformChain(deps, 'CAP-PLT-01'), h(async (req, res) => {

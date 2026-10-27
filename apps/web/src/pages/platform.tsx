@@ -69,6 +69,8 @@ export function PlatformPage() {
         { header: 'Clinic', cell: (c) => <>{String(c.name)}<div className="text-xs text-slate-500">/{String(c.slug)} · {String(c.timezone)}</div></> },
         { header: 'Status', cell: (c) => <>{String(c.status)}{c.statusReason ? <div className="text-xs text-slate-500">{String(c.statusReason)}</div> : null}</> },
         { header: 'Active members', cell: (c) => String(c.activeMembershipCount) },
+        { header: 'Appointments (30 d)', cell: (c) => String(c.appointmentsLast30Days ?? 0) },
+        { header: 'Queue visits (30 d)', cell: (c) => String(c.queueVisitsLast30Days ?? 0) },
         { header: 'Created', cell: (c) => new Date(String(c.createdAt)).toLocaleDateString() },
         { header: '', cell: (c) => (
           <>

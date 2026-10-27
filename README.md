@@ -11,6 +11,7 @@ pnpm lint && pnpm typecheck
 pnpm test:unit          # pure unit tests (no database)
 pnpm test:int           # integration tests; DATABASE_URL must point to a disposable *_test database
 pnpm db:verify          # checks hand-written constraints/triggers/grants after migrations
+pnpm test:e2e           # Playwright (Chromium) journeys + axe; needs the same disposable *_test database
 ```
 
 Planning documents: `docs/baseline-v1.1/`. Engineering rules: `CLAUDE.md`.

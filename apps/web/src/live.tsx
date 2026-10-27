@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 
-export type LiveState = 'connecting' | 'live' | 'reconnecting';
+export type LiveState = 'connecting' | 'live' | 'reconnecting' | 'offline';
+/** 4xx (except 429) means the credential is invalid: stop retrying. */
+class FatalStreamError extends Error {}
 
 /**
  * Shared SSE hook (SC3-FE-05, ADR-027): fetch-based so credentials travel in headers, never in the URL.
@@ -22,6 +24,7 @@ export function useLive(path: string | null, headers: Record<string, string>, on
       signal: ctrl.signal,
       openWhenHidden: true,
       async onopen(res) {
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) throw new FatalStreamError(`stream ${res.status}`);
         if (!res.ok) throw new Error(`stream ${res.status}`);
         delay = 1000;
         setState('live');
@@ -34,12 +37,16 @@ export function useLive(path: string | null, headers: Record<string, string>, on
         setState('reconnecting');
         throw new Error('closed'); // let onerror schedule the retry
       },
-      onerror() {
+      onerror(err) {
+        if (err instanceof FatalStreamError) {
+          setState('offline');
+          throw err; // stops fetch-event-source retrying
+        }
         setState('reconnecting');
         delay = Math.min(30_000, delay * 2);
         return delay + Math.random() * 500; // back off 1–30 s with jitter (Arch 19.3)
       },
-    });
+    }).catch(() => undefined);
     return () => ctrl.abort();
   }, [path, headerKey]);
   return state;
@@ -47,6 +54,6 @@ export function useLive(path: string | null, headers: Record<string, string>, on
 
 export const LiveBadge = ({ state }: { state: LiveState }) => (
   <span role="status" className={`rounded px-2 py-0.5 text-xs ${state === 'live' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-    {state === 'live' ? 'Live' : 'Reconnecting…'}
+    {state === 'live' ? 'Live' : state === 'offline' ? 'Offline' : 'Reconnecting…'}
   </span>
 );

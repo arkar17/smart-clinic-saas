@@ -12,6 +12,7 @@ import { privateBookingRoutes, publicRoutes } from './modules/booking/index';
 import { appointmentRoutes } from './modules/appointments/index';
 import { publicQueueRoutes, staffQueueRoutes } from './modules/queue/index';
 import { Hub } from './modules/realtime/index';
+import { reportRoutes } from './modules/reporting/index';
 
 export function createApp(deps: Deps) {
   deps.hub ??= new Hub(deps.prisma, deps.log);
@@ -46,6 +47,7 @@ export function createApp(deps: Deps) {
   app.use('/api/queue', q.queue);
   app.use('/api/clinic/walk-in-pause', q.pause);
   app.use('/api/staff/stream', q.stream);
+  app.use('/api/reports', reportRoutes(deps));
   const appts = appointmentRoutes(deps);
   app.use('/api/appointments', appts.appointments);
   app.use('/api/availability', appts.availability);

@@ -85,11 +85,13 @@ export function QueueStatusCard({ token, initial }: { token: string; initial?: P
   const [s, setS] = useState<PublicQueueStatus | null>(initial ?? null);
   const [error, setError] = useState<unknown>(null);
   const reload = useCallback(() => api<PublicQueueStatus>('GET', '/public/queue-entry', undefined, { 'x-access-token': token }).then(setS, setError), [token]);
+  useEffect(() => { if (!initial) void reload(); }, [reload, initial]);
   const live = useLive('/public/stream', { 'x-access-token': token }, (event, data) => { if (event === 'status') setS(data as PublicQueueStatus); }, () => void reload());
   async function leave() {
     if (!window.confirm('Leave the queue? You will lose your place.')) return;
     try { setS(await api<PublicQueueStatus>('POST', '/public/queue-entry/leave', {}, { 'x-access-token': token, 'idempotency-key': crypto.randomUUID() })); } catch (x) { setError(x); }
   }
+  if (!s && error instanceof ApiError && error.status === 404) return <section className="rounded bg-white p-4 shadow-sm"><h2 className="text-lg font-semibold">This link is not valid</h2><p className="text-sm text-slate-600">It may have expired. Please contact the clinic.</p></section>;
   if (!s) return error ? <ErrorState error={error} /> : <Loading />;
   return (
     <section className="space-y-2 rounded bg-white p-4 text-center shadow-sm" aria-live="polite">
