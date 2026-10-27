@@ -183,15 +183,21 @@ describe('keyboard-only walkthrough (TC-NFR-001 keyboard part)', () => {
     f = await seedFixtures();
     const p = await page('mobile');
     await p.goto(`${WEB}/c/e2e-clinic`);
-    const tabTo = async (name: RegExp, max = 25) => {
+    await p.getByRole('link', { name: 'Join Today’s Queue' }).waitFor(); // portal data loaded before tabbing
+    const tabTo = async (name: RegExp, max = 30) => {
       for (let i = 0; i < max; i++) {
         await p.keyboard.press('Tab');
-        if (name.test((await p.evaluate(() => (document.activeElement as HTMLElement | null)?.innerText || (document.activeElement as HTMLInputElement | null)?.labels?.[0]?.innerText || '')) ?? '')) return;
+        const label = await p.evaluate(() => {
+          const el = document.activeElement as HTMLInputElement | null;
+          return el && el !== document.body ? (el.labels?.[0]?.innerText || el.innerText || '').trim() : '';
+        });
+        if (name.test(label)) return;
       }
       throw new Error(`could not reach ${name} by keyboard`);
     };
-    await tabTo(/Join Today’s Queue/);
+    await tabTo(/^Join Today’s Queue$/);
     await p.keyboard.press('Enter');
+    await p.waitForURL(/\/c\/e2e-clinic\/join$/);
     await p.getByRole('heading', { name: 'Join today’s queue' }).waitFor();
     await tabTo(/General consultation/);
     await p.keyboard.press('Enter');
