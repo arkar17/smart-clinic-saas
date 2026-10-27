@@ -9,7 +9,7 @@ import type { Deps } from '../../infra/context';
 import { writeAudit } from '../audit/index';
 import { assertDoctorScope, grantOf, staffChain } from '../identity/index';
 import { findOrCreatePatient, validatePatientIdentity } from '../patients/index';
-import { TX, assertSlot, bookingContext, bookingLinkExpiry, computeSlots, expireStaleHolds, freshReference, issueBookingToken, privateBookingUrl } from '../booking/index';
+import { TX, retryOnDeadlock, assertSlot, bookingContext, bookingLinkExpiry, computeSlots, expireStaleHolds, freshReference, issueBookingToken, privateBookingUrl } from '../booking/index';
 import { bookableIntervals } from '../scheduling/index';
 
 const include = { service: { select: { id: true, name: true, durationMin: true } }, doctor: { select: { id: true, displayName: true } }, patient: { select: { id: true, fullName: true, phoneE164: true } } } as const;
@@ -93,7 +93,7 @@ export function appointmentRoutes(deps: Deps): { appointments: Router; availabil
     const startAt = new Date(body.startAt);
     const bctx = await bookingContext(prisma, c.id, body.serviceId, body.doctorId, 'STAFF');
     const { endAt, serviceDate } = await assertSlot(prisma, c, bctx, startAt, now, 'STAFF');
-    const out = await prisma.$transaction(async (tx) => {
+    const out = await retryOnDeadlock(() => prisma.$transaction(async (tx) => {
       await expireStaleHolds(tx, bctx.doctor.id, startAt, endAt, now);
       const { patient } = await findOrCreatePatient(tx, c.id, identity, 'STAFF', now);
       const a = await tx.appointment.create({
@@ -105,7 +105,7 @@ export function appointmentRoutes(deps: Deps): { appointments: Router; availabil
       const token = await issueBookingToken(tx, c.id, a.id, startAt, now, ctx.memberId);
       await writeAudit(tx, req, now, { clinicId: c.id, action: 'appointment.created', entityType: 'appointment', entityId: a.id, toStatus: 'CONFIRMED' });
       return { id: a.id, token };
-    }, TX);
+    }, TX));
     res.status(201).json({ appointment: view(await load(req, out.id)), privateUrl: privateBookingUrl(deps, c.slug, out.token) });
   }));
 
@@ -120,7 +120,7 @@ export function appointmentRoutes(deps: Deps): { appointments: Router; availabil
     const startAt = new Date(body.startAt);
     const bctx = await bookingContext(prisma, c.id, a.serviceId, body.doctorId ?? a.doctorId, 'STAFF');
     const { endAt, serviceDate } = await assertSlot(prisma, c, bctx, startAt, now, 'STAFF', [a.id]);
-    await prisma.$transaction(async (tx) => {
+    await retryOnDeadlock(() => prisma.$transaction(async (tx) => {
       await expireStaleHolds(tx, bctx.doctor.id, startAt, endAt, now);
       const n = await tx.appointment.updateMany({
         where: { id: a.id, clinicId: c.id, status: 'CONFIRMED', version: body.version },
@@ -132,7 +132,7 @@ export function appointmentRoutes(deps: Deps): { appointments: Router; availabil
         clinicId: c.id, action: 'appointment.rescheduled', entityType: 'appointment', entityId: a.id,
         changes: { from: { doctorId: a.doctorId, startAt: a.startAt.toISOString() }, to: { doctorId: bctx.doctor.id, startAt: startAt.toISOString() } },
       });
-    }, TX);
+    }, TX));
     res.json(view(await load(req, a.id)));
   }));
 

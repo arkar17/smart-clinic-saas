@@ -15,10 +15,10 @@ import type { Deps } from '../../infra/context';
 import { writeAudit } from '../audit/index';
 import { findOrCreatePatient, validatePatientIdentity } from '../patients/index';
 import { clinicIntervals, type ClosureRow } from '../scheduling/index';
-import { assertSlot, bookingContext, computeSlots, expireStaleHolds } from './slots';
+import { assertSlot, bookingContext, computeSlots, expireStaleHolds, retryOnDeadlock } from './slots';
 import { bookingLinkExpiry, freshReference, issueBookingToken, privateBookingUrl } from './tokens';
 
-export { assertSlot, bookingContext, computeSlots, expireStaleHolds, loadBusy } from './slots';
+export { assertSlot, bookingContext, computeSlots, expireStaleHolds, loadBusy, retryOnDeadlock } from './slots';
 export { bookingLinkExpiry, freshReference, issueBookingToken, privateBookingUrl } from './tokens';
 export { expireHolds, purgeIdempotency } from './jobs';
 
@@ -137,7 +137,7 @@ export function publicRoutes(deps: Deps): Router {
     const clientHash = sha256(clientRaw);
     const ownHold = await prisma.appointment.findFirst({ where: { clinicId: c.id, holdClientHash: clientHash, status: 'PENDING' }, select: { id: true } });
     const { endAt, serviceDate } = await assertSlot(prisma, c, ctx, startAt, now, 'PUBLIC', ownHold ? [ownHold.id] : []);
-    const out = await prisma.$transaction((tx) => idempotent(tx, req, { clinicId: c.id, endpoint: 'reservations.create', encKey: deps.env.IDEMPOTENCY_ENC_KEY, now }, async () => {
+    const out = await retryOnDeadlock(() => prisma.$transaction((tx) => idempotent(tx, req, { clinicId: c.id, endpoint: 'reservations.create', encKey: deps.env.IDEMPOTENCY_ENC_KEY, now }, async () => {
       await expireStaleHolds(tx, ctx.doctor.id, startAt, endAt, now);
       // AT-04: a new hold from the same browser replaces its previous one.
       await tx.appointment.updateMany({ where: { clinicId: c.id, holdClientHash: clientHash, status: 'PENDING' }, data: { status: 'CANCELLED', cancelledAt: now, cancelledBy: 'PATIENT', cancelReason: 'REPLACED_BY_NEW_HOLD', reservationSecretHash: null, holdIpHash: null, version: { increment: 1 } } });
@@ -159,7 +159,7 @@ export function publicRoutes(deps: Deps): Router {
           summary: { service: ctx.service.name, doctor: ctx.doctor.displayName, startAt: startAt.toISOString(), endAt: endAt.toISOString(), timezone: c.timezone },
         },
       };
-    }), TX);
+    }), TX));
     if (!out.replayed) res.cookie(HOLD_COOKIE, clientRaw, { httpOnly: true, secure: deps.env.COOKIE_SECURE, sameSite: 'strict', path: '/api/public', maxAge: 3_600_000 });
     res.status(out.status).json(out.body);
   }));

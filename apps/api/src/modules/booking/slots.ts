@@ -73,3 +73,17 @@ export function expireStaleHolds(tx: Prisma.TransactionClient, doctorId: string,
     WHERE doctor_id = ${doctorId}::uuid AND status = 'PENDING' AND hold_expires_at <= ${now}
       AND tstzrange(start_at, end_at, '[)') && tstzrange(${startAt}, ${endAt}, '[)')`;
 }
+
+/**
+ * Concurrent writers of overlapping ranges can deadlock inside the exclusion-constraint check (SQLSTATE 40P01);
+ * PostgreSQL aborts one transaction. Re-running it sees the committed winner and fails cleanly with 23P01 → 409.
+ */
+export async function retryOnDeadlock<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= attempts || !/deadlock detected|40P01/.test(e instanceof Error ? e.message : '')) throw e;
+    }
+  }
+}
