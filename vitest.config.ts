@@ -17,6 +17,8 @@ export default defineConfig({
           include: ['apps/api/test/**/*.int.test.ts'],
           globalSetup: ['apps/api/test/global-setup.ts'],
           fileParallelism: false,
+          pool: 'forks',
+          poolOptions: { forks: { singleFork: true } },
           testTimeout: 30000,
           hookTimeout: 60000,
         },

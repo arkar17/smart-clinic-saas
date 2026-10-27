@@ -73,7 +73,8 @@ describe('strict tenant isolation (TC-SEC-001, TC-SEC-002, TC-SEC-012)', () => {
 
   it('TC-SEC-012: the database rejects cross-clinic references (composite FK, 23503)', async () => {
     await expect(prisma.$executeRaw`INSERT INTO doctor_service (clinic_id, doctor_id, service_id) VALUES (${w.A.clinic.id}::uuid, ${w.B.doctor.id}::uuid, ${w.A.service.id}::uuid)`).rejects.toThrow(/doctor_service_doctor_fkey|23503/);
-    await expect(prisma.$executeRaw`INSERT INTO doctor (clinic_id, display_name, member_id) VALUES (${w.A.clinic.id}::uuid, 'Dr. Cross', ${w.mDualB.member.id}::uuid)`).rejects.toThrow(/doctor_member_fkey|23503/);
+    const unlinkedB = await prisma.clinicMember.findFirstOrThrow({ where: { clinicId: w.B.clinic.id, userId: w.adminB.id } });
+    await expect(prisma.$executeRaw`INSERT INTO doctor (clinic_id, display_name, member_id) VALUES (${w.A.clinic.id}::uuid, 'Dr. Cross', ${unlinkedB.id}::uuid)`).rejects.toThrow(/doctor_member_fkey|23503/);
     await expect(prisma.$executeRaw`INSERT INTO doctor_availability (clinic_id, doctor_id, weekday, start_min, end_min) VALUES (${w.A.clinic.id}::uuid, ${w.B.doctor.id}::uuid, 2, 540, 600)`).rejects.toThrow(/doctor_availability_doctor_fkey|23503/);
   });
 });

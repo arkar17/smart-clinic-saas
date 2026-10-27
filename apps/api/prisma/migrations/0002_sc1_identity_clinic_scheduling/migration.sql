@@ -195,7 +195,7 @@ CREATE TABLE "schedule_exception" (
 
 -- CreateTable
 CREATE TABLE "audit_log" (
-    "id" BIGSERIAL NOT NULL,
+    "id" BIGINT GENERATED ALWAYS AS IDENTITY,
     "occurred_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "clinic_id" UUID,
     "actor_type" "actor_type" NOT NULL,
