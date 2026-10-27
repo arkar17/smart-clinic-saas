@@ -9,3 +9,5 @@ export * from './staff';
 export * from './services';
 export * from './doctors';
 export * from './permissions';
+export * from './patients';
+export * from './public';

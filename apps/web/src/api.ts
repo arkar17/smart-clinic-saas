@@ -31,3 +31,15 @@ export async function api<T>(method: string, path: string, body?: unknown, heade
   return data as T;
 }
 export const get = <T,>(p: string) => api<T>('GET', p);
+
+/** Downloads a binary staff resource (QR codes) with the clinic/CSRF headers a plain link cannot send. */
+export async function download(path: string, filename: string) {
+  const h: Record<string, string> = {};
+  if (clinicId) h['x-clinic-id'] = clinicId;
+  const res = await fetch(`/api${path}`, { headers: h, credentials: 'same-origin' });
+  if (!res.ok) throw new Error('Download failed.');
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  a.click();
+  URL.revokeObjectURL(url);
+}

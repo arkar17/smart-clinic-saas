@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { DaySchedule } from '@sc/contracts';
-import { api } from '../api';
+import { api, download } from '../api';
 import { hasRole, useAuth } from '../auth';
 import { Button, DataTable, Dialog, ErrorState, Field, Loading, WeekEditor, fieldsOf, messageOf, useResource, useToast } from '../components';
 
@@ -15,6 +15,7 @@ const formObject = (e: FormEvent<HTMLFormElement>) => Object.fromEntries(new For
 
 /** A-01 Settings: clinic profile, booking and walk-in settings (FR-CLN-001, -005, -006). */
 export function SettingsPage() {
+  const { me } = useAuth();
   const canEdit = useCanEdit();
   const toast = useToast();
   const profile = useResource<Obj>('/clinic/profile');
@@ -68,6 +69,16 @@ export function SettingsPage() {
         <Field label="Privacy notice (blank = platform template)" name="privacyNotice" defaultValue={String(p.privacyNotice ?? '')} disabled={!canEdit} />
         {canEdit && <div className="sm:col-span-2"><Button type="submit">Save profile</Button></div>}
       </form>
+      {hasRole(me, 'CLINIC_ADMIN', 'RECEPTIONIST') && (
+        <section className="space-y-2 rounded bg-white p-4 shadow-sm">
+          <h2 className="font-semibold">Clinic QR code</h2>
+          <p className="text-sm text-slate-600">Encodes only the permanent public address /c/{String(p.slug)}.</p>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => download('/clinic/qr.png', `${p.slug}-qr.png`).catch((x) => toast(messageOf(x), 'error'))}>Download PNG</Button>
+            <Button variant="secondary" onClick={() => download('/clinic/qr.svg', `${p.slug}-qr.svg`).catch((x) => toast(messageOf(x), 'error'))}>Download SVG</Button>
+          </div>
+        </section>
+      )}
       <form onSubmit={saveSettings} className="grid gap-3 rounded bg-white p-4 shadow-sm sm:grid-cols-3">
         <h2 className="font-semibold sm:col-span-3">Booking</h2>
         {n('slotGranularityMin', 'Slot granularity (5,10,15,20,30,60)')}{n('holdMinutes', 'Hold minutes (5–30)')}{n('minNoticeMin', 'Minimum notice (min)')}

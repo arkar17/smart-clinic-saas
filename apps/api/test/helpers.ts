@@ -16,7 +16,7 @@ export const clock = new FixedClock(new Date('2026-11-02T03:00:00Z')); // Monday
 let server: Server | undefined;
 let base = '';
 export async function startApp() {
-  const env = loadEnv({ ...process.env, IP_HASH_PEPPER: 'test-pepper-not-secret', COOKIE_SECURE: 'false', APP_ORIGIN: ORIGIN, LOG_LEVEL: 'silent', LOGIN_RATE_LIMIT_PER_10_MIN: '100000' });
+  const env = loadEnv({ ...process.env, IP_HASH_PEPPER: 'test-pepper-not-secret', COOKIE_SECURE: 'false', APP_ORIGIN: ORIGIN, LOG_LEVEL: 'silent', LOGIN_RATE_LIMIT_PER_10_MIN: '100000', PUBLIC_RATE_LIMIT_PER_MIN: '100000' });
   const app = createApp({ prisma, clock, env, log: createLogger('silent') });
   server = app.listen(0);
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -26,7 +26,7 @@ export async function stopApp() {
   await prisma.$disconnect();
 }
 
-const TABLES = ['audit_log', 'session', 'schedule_exception', 'doctor_availability', 'doctor_service', 'clinic_service', 'clinic_closure', 'clinic_business_hour', 'doctor', 'clinic_member', 'clinic', 'app_user'];
+const TABLES = ['audit_log', 'patient', 'session', 'schedule_exception', 'doctor_availability', 'doctor_service', 'clinic_service', 'clinic_closure', 'clinic_business_hour', 'doctor', 'clinic_member', 'clinic', 'app_user'];
 /** Destroys fixtures created by the test runner in the disposable test database only. */
 export async function resetDb() {
   await prisma.$executeRawUnsafe(`TRUNCATE ${TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);
@@ -56,6 +56,12 @@ export class Client {
     if (parsed?.csrfToken) this.csrf = parsed.csrfToken;
     if (parsed && 'selectedClinicId' in parsed) this.clinicId = parsed.selectedClinicId;
     return { status: res.status, body: parsed, headers: res.headers };
+  }
+  /** Non-JSON responses (QR images). */
+  async raw(path: string): Promise<Response> {
+    const headers: Record<string, string> = { cookie: this.cookie };
+    if (this.clinicId) headers['x-clinic-id'] = this.clinicId;
+    return fetch(base + path, { headers });
   }
   get = (p: string, extra?: Record<string, string>) => this.req('GET', p, undefined, extra);
   post = (p: string, b: unknown = {}, extra?: Record<string, string>) => this.req('POST', p, b, extra);

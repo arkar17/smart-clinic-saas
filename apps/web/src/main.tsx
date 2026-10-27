@@ -9,6 +9,7 @@ import { AppHome, AppShell } from './pages/shell';
 import { DoctorsPage, HoursPage, ServicesPage, SettingsPage, StaffPage } from './pages/admin';
 import { PlatformPage } from './pages/platform';
 import { MySchedulePage } from './pages/doctor';
+import { BookPage, PortalPage } from './pages/public';
 
 const Placeholder = ({ text }: { text: string }) => <main className="p-8 text-center text-slate-600">{text}</main>;
 
@@ -35,7 +36,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/platform" element={<AppShell realm="platform" />}>
               <Route index element={<PlatformPage />} />
             </Route>
-            <Route path="/c/*" element={<Placeholder text="The public clinic portal arrives in SC-2." />} />
+            <Route path="/c/:slug" element={<PortalPage />} />
+            <Route path="/c/:slug/book" element={<BookPage />} />
             <Route path="/display" element={<Placeholder text="The waiting-room display arrives in SC-3." />} />
             <Route path="*" element={<Placeholder text="Page not found." />} />
           </Routes>

@@ -7,6 +7,8 @@ import { authRoutes, staffRoutes } from './modules/identity/index';
 import { platformRoutes } from './modules/platform/index';
 import { clinicRoutes, serviceRoutes } from './modules/clinic/index';
 import { doctorRoutes } from './modules/scheduling/index';
+import { patientRoutes } from './modules/patients/index';
+import { publicRoutes } from './modules/booking/index';
 
 export function createApp(deps: Deps) {
   const app = express();
@@ -29,6 +31,10 @@ export function createApp(deps: Deps) {
   app.use('/api/services', serviceRoutes(deps));
   app.use('/api/doctors', doctorRoutes(deps));
   app.use('/api/staff', staffRoutes(deps));
+  const patients = patientRoutes(deps);
+  app.use('/api/patients', patients.patients);
+  app.use('/api/search', patients.search);
+  app.use('/api/public/clinics', publicRoutes(deps));
   app.use('/api', (_req, _res, next) => next(notFound()));
   app.use(errorHandler);
   return app;

@@ -11,6 +11,9 @@ const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   TRUST_PROXY: z.coerce.number().int().default(1),
   LOGIN_RATE_LIMIT_PER_10_MIN: z.coerce.number().int().default(20),
+  PUBLIC_RATE_LIMIT_PER_MIN: z.coerce.number().int().default(120),
+  /** Canonical public host encoded in clinic QR codes (FR-QR-001); defaults to APP_ORIGIN. */
+  PUBLIC_BASE_URL: z.string().url().optional(),
 });
 export type Env = z.infer<typeof EnvSchema>;
 

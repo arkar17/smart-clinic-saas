@@ -3,7 +3,7 @@ import { isoWeekday, localMinutesToUtc } from '../../infra/time';
 
 export interface Interval { start: number; end: number } // local minutes [start, end)
 export interface WeeklyRow { weekday: number; startMin: number; endMin: number }
-export interface ClosureRow { startDate: string; endDate: string; startMin: number | null; endMin: number | null }
+export interface ClosureRow { startDate: string; endDate: string; startMin: number | null; endMin: number | null; label?: string | null }
 export interface ExceptionRow { exceptionDate: string; kind: 'UNAVAILABLE' | 'MODIFIED_HOURS'; startMin: number | null; endMin: number | null }
 export interface UtcInterval { start: Date; end: Date }
 

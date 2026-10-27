@@ -1,7 +1,15 @@
 {
   "comment": "Hand-written database objects that must exist after `prisma migrate deploy` (ADR-019, TC-NFR-007). Extend with every migration.",
-  "extensions": ["btree_gist", "citext", "pg_trgm", "pgcrypto"],
-  "roles": ["sc_owner", "sc_app"],
+  "extensions": [
+    "btree_gist",
+    "citext",
+    "pg_trgm",
+    "pgcrypto"
+  ],
+  "roles": [
+    "sc_owner",
+    "sc_app"
+  ],
   "constraints": [
     "app_user_failed_login_count_check",
     "app_user_deactivation_reason_check",
@@ -29,22 +37,77 @@
     "schedule_exception_range_check",
     "schedule_exception_modified_no_overlap",
     "schedule_exception_doctor_fkey",
-    "schedule_exception_created_by_fkey"
+    "schedule_exception_created_by_fkey",
+    "patient_phone_presence_check",
+    "patient_phone_format_check",
+    "patient_name_check",
+    "patient_clinic_id_fkey"
   ],
   "indexes": [
     "session_user_live_idx",
     "session_active_member_live_idx",
     "clinic_member_clinic_id_user_id_key",
     "clinic_member_clinic_id_id_user_id_key",
-    "doctor_member_id_key"
+    "doctor_member_id_key",
+    "patient_match_key",
+    "patient_clinic_last4_idx",
+    "patient_name_trgm_idx",
+    "patient_clinic_id_id_key"
   ],
-  "triggers": [{ "table": "clinic", "name": "clinic_lock_after_activation" }],
+  "triggers": [
+    {
+      "table": "clinic",
+      "name": "clinic_lock_after_activation"
+    }
+  ],
   "privileges": [
-    { "role": "sc_app", "table": "audit_log", "privilege": "INSERT", "expected": true },
-    { "role": "sc_app", "table": "audit_log", "privilege": "SELECT", "expected": true },
-    { "role": "sc_app", "table": "audit_log", "privilege": "UPDATE", "expected": false },
-    { "role": "sc_app", "table": "audit_log", "privilege": "DELETE", "expected": false },
-    { "role": "sc_app", "table": "audit_log", "privilege": "TRUNCATE", "expected": false },
-    { "role": "sc_app", "table": "clinic", "privilege": "UPDATE", "expected": true }
+    {
+      "role": "sc_app",
+      "table": "audit_log",
+      "privilege": "INSERT",
+      "expected": true
+    },
+    {
+      "role": "sc_app",
+      "table": "audit_log",
+      "privilege": "SELECT",
+      "expected": true
+    },
+    {
+      "role": "sc_app",
+      "table": "audit_log",
+      "privilege": "UPDATE",
+      "expected": false
+    },
+    {
+      "role": "sc_app",
+      "table": "audit_log",
+      "privilege": "DELETE",
+      "expected": false
+    },
+    {
+      "role": "sc_app",
+      "table": "audit_log",
+      "privilege": "TRUNCATE",
+      "expected": false
+    },
+    {
+      "role": "sc_app",
+      "table": "clinic",
+      "privilege": "UPDATE",
+      "expected": true
+    },
+    {
+      "role": "sc_app",
+      "table": "patient",
+      "privilege": "INSERT",
+      "expected": true
+    }
+  ],
+  "generatedColumns": [
+    {
+      "table": "patient",
+      "column": "phone_last4"
+    }
   ]
 }

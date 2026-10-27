@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import QRCode from 'qrcode';
 import {
   ClosureRequest, CreateServiceRequest, ServiceDoctorsRequest, UpdateProfileRequest, UpdateServiceRequest, UpdateSettingsRequest, WeekSchedule,
   dayToIntervals, intervalsToWeek, toMinutes,
@@ -135,6 +136,17 @@ export function clinicRoutes(deps: Deps): Router {
       await writeAudit(tx, req, now, { clinicId: ctx.clinicId, action: 'closure.deleted', entityType: 'clinic_closure', entityId: id });
     });
     res.status(204).end();
+  }));
+
+  // FR-QR-001..003: one permanent QR per clinic encoding only the canonical public URL (no token, no personal data).
+  const publicUrl = (slug: string) => `${deps.env.PUBLIC_BASE_URL ?? deps.env.APP_ORIGIN}/c/${slug}?src=qr`;
+  r.get('/qr.:format(png|svg)', ...staffChain(deps, 'CAP-CLN-08', 'read'), h(async (req, res) => {
+    const c = await loadClinic(req.clinic!.clinicId);
+    const url = publicUrl(c.slug);
+    res.setHeader('Content-Disposition', `attachment; filename="${c.slug}-qr.${req.params.format}"`);
+    res.setHeader('X-QR-Url', url);
+    if (req.params.format === 'svg') res.type('image/svg+xml').send(await QRCode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 2 }));
+    else res.type('image/png').send(await QRCode.toBuffer(url, { type: 'png', width: 1024, errorCorrectionLevel: 'M', margin: 2 }));
   }));
 
   return r;

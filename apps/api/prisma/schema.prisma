@@ -41,6 +41,14 @@ enum ScheduleExceptionKind {
   @@map("schedule_exception_kind")
 }
 
+enum PatientSource {
+  QR_BOOKING
+  QR_WALK_IN
+  STAFF
+
+  @@map("patient_source")
+}
+
 enum ActorType {
   STAFF
   PUBLIC_PATIENT
@@ -136,6 +144,7 @@ model Clinic {
   doctorService DoctorService[]
   availability  DoctorAvailability[]
   exceptions    ScheduleException[]
+  patients      Patient[]
   auditEvents   AuditLog[]
 
   @@map("clinic")
@@ -321,4 +330,26 @@ model AuditLog {
   @@index([clinicId, occurredAt(sort: Desc)])
   @@index([entityType, entityId])
   @@map("audit_log")
+}
+
+// SC-2A (Arch 11.12): clinic-scoped operational patient record — name and phone only (FR-PAT-001).
+// phone_last4 is a GENERATED column created by hand-written SQL; the application never writes it.
+model Patient {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String        @map("clinic_id") @db.Uuid
+  fullName       String        @map("full_name") @db.VarChar(100)
+  nameNormalized String        @map("name_normalized") @db.VarChar(100)
+  phoneE164      String?       @map("phone_e164") @db.VarChar(16)
+  noPhoneReason  String?       @map("no_phone_reason") @db.VarChar(200)
+  phoneLast4     String?       @map("phone_last4") @db.Char(4)
+  source         PatientSource
+  anonymizedAt   DateTime?     @map("anonymized_at") @db.Timestamptz(6)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([clinicId, phoneE164])
+  @@map("patient")
 }

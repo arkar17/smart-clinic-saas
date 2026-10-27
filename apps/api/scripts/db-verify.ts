@@ -10,6 +10,7 @@ interface Manifest {
   indexes: string[];
   triggers: { table: string; name: string }[];
   privileges: { role: string; table: string; privilege: string; expected: boolean }[];
+  generatedColumns?: { table: string; column: string }[];
 }
 
 export async function verifyDatabase(prisma: PrismaClient): Promise<string[]> {
@@ -31,6 +32,11 @@ export async function verifyDatabase(prisma: PrismaClient): Promise<string[]> {
   for (const p of manifest.privileges) {
     const [row] = await prisma.$queryRawUnsafe<{ ok: boolean }[]>('SELECT has_table_privilege($1, $2, $3) AS ok', p.role, `public.${p.table}`, p.privilege);
     if (row?.ok !== p.expected) problems.push(`privilege ${p.privilege} on ${p.table} for ${p.role} should be ${p.expected}`);
+  }
+  for (const g of manifest.generatedColumns ?? []) {
+    const [row] = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+      "SELECT count(*) AS n FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2 AND is_generated = 'ALWAYS'", g.table, g.column);
+    if (!row || Number(row.n) !== 1) problems.push(`missing generated column ${g.table}.${g.column}`);
   }
   return problems;
 }
