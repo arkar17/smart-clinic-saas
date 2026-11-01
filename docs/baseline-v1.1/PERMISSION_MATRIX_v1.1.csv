@@ -1,0 +1,48 @@
+capability_id,area,capability,platform_admin,clinic_admin,receptionist,doctor,public_patient,scope_rule,srs_refs,api_endpoints
+CAP-PLT-01,Platform,Create clinic and first Clinic Admin,ALLOW,DENY,DENY,DENY,DENY,Platform realm only,FR-PLT-001,POST /api/platform/clinics
+CAP-PLT-02,Platform,"Activate, suspend, reactivate clinic",ALLOW,DENY,DENY,DENY,DENY,Reason mandatory on suspend,"FR-PLT-002, FR-PLT-003",POST /api/platform/clinics/:id/{activate|suspend|reactivate}
+CAP-PLT-03,Platform,View clinic list and aggregate counts,ALLOW,DENY,DENY,DENY,DENY,Metadata and aggregates only,FR-PLT-004,GET /api/platform/clinics
+CAP-PLT-04,Platform,Reset any staff account password,ALLOW,DENY,DENY,DENY,DENY,Only path for accounts with memberships in more than one clinic (BR-084),FR-PLT-005,POST /api/platform/users/:id/password-reset
+CAP-PLT-06,Platform,Look up global staff account and its memberships,ALLOW,DENY,DENY,DENY,DENY,Account metadata and membership list only; no patient data,FR-PLT-004,GET /api/platform/users?email=
+CAP-PLT-07,Platform,Deactivate / reactivate global staff account,ALLOW,DENY,DENY,DENY,DENY,Reason mandatory; revokes sessions in all clinics,FR-PLT-006,POST /api/platform/users/:id/{deactivate|reactivate}
+CAP-PLT-05,Platform,"Read any patient, appointment or queue record",DENY,ALLOW,ALLOW,ALLOW_OWN,ALLOW_OWN_TOKEN,DR: own doctor profile; PP: record bound to access token,"FR-SEC-011, Section 10",(enforced across all tenant endpoints)
+CAP-CLN-01,Clinic configuration,"Edit clinic profile, booking and walk-in settings",DENY,ALLOW,DENY,DENY,DENY,,"FR-CLN-001, -005, -006",PATCH /api/clinic/profile; PATCH /api/clinic/settings
+CAP-CLN-02,Clinic configuration,Edit operating hours and closures,DENY,ALLOW,READ,READ,DENY,,"FR-CLN-003, -004",PUT /api/clinic/business-hours; /api/clinic/closures
+CAP-CLN-03,Clinic configuration,Pause/resume walk-in registration today,DENY,ALLOW,ALLOW,DENY,DENY,,FR-CLN-007,PUT|DELETE /api/clinic/walk-in-pause
+CAP-CLN-04,Clinic configuration,Manage services and doctor eligibility,DENY,ALLOW,READ,READ,DENY,,FR-SVC-001..004,/api/services
+CAP-CLN-05,Clinic configuration,"Manage doctor profiles, schedules, exceptions",DENY,ALLOW,READ,READ_OWN,DENY,DR reads own schedule only,FR-DOC-001..005,/api/doctors
+CAP-CLN-06,Clinic configuration,Mark doctor unavailable for rest of today,DENY,ALLOW,ALLOW,ALLOW_OWN,DENY,DR: own profile,FR-DOC-006,POST /api/doctors/:id/unavailable-today
+CAP-CLN-07,Clinic configuration,Manage staff memberships and roles in own clinic,DENY,ALLOW,DENY,DENY,DENY,Add by email (new or existing account); sees only own-clinic memberships; last CLINIC_ADMIN protected,FR-STF-001..004,GET|POST /api/staff; PATCH /api/staff/:memberId; POST /api/staff/:memberId/{deactivate|reactivate}
+CAP-CLN-09,Clinic configuration,Reset password of staff with no other clinic membership,DENY,ALLOW,DENY,DENY,DENY,Refused (403) if the account has a membership elsewhere (BR-084),FR-STF-005,POST /api/staff/:memberId/reset-password
+CAP-CLN-08,Clinic configuration,Download QR code / poster,DENY,ALLOW,ALLOW,DENY,DENY,,FR-QR-002,GET /api/clinic/qr.{png|svg}
+CAP-APT-01,Appointments,"View public portal, services, availability",N/A,ALLOW,ALLOW,ALLOW,ALLOW,Staff use public pages like any visitor,"FR-QR-004, FR-APT-001..004",GET /api/public/clinics/:slug/*
+CAP-APT-02,Appointments,Create reservation hold and confirm (public flow),DENY,DENY,DENY,DENY,ALLOW,Rate-limited; anonymous,"FR-APT-005, -006",POST /api/public/clinics/:slug/reservations[/:id/confirm|release]
+CAP-APT-03,Appointments,Create appointment on patient's behalf,DENY,ALLOW,ALLOW,DENY,DENY,No minimum notice (A-018),FR-APT-010,POST /api/appointments
+CAP-APT-04,Appointments,View appointments,DENY,ALLOW,ALLOW,ALLOW_OWN,ALLOW_OWN_TOKEN,,"FR-APT-008, -015",GET /api/appointments; GET /api/public/booking
+CAP-APT-05,Appointments,Reschedule appointment,DENY,ALLOW,ALLOW,DENY,DENY,Atomic; original kept on failure,FR-APT-011,POST /api/appointments/:id/reschedule
+CAP-APT-06,Appointments,Cancel appointment,DENY,ALLOW,ALLOW,DENY,ALLOW_OWN_TOKEN_BEFORE_CUTOFF,PP before cutoff (BR-056),"FR-APT-009, -011",POST /api/appointments/:id/cancel; POST /api/public/booking/cancel
+CAP-APT-07,Appointments,Check in appointment (incl. override),DENY,ALLOW,ALLOW,DENY,DENY,Override requires reason,FR-APT-012,POST /api/appointments/:id/check-in
+CAP-APT-08,Appointments,Mark appointment no-show,DENY,ALLOW,ALLOW,DENY,DENY,After grace,FR-APT-013,POST /api/appointments/:id/no-show
+CAP-APT-09,Appointments,View and resolve conflicts,DENY,ALLOW,ALLOW,DENY,DENY,,FR-APT-016,GET /api/appointments/conflicts
+CAP-QUE-01,Queue,QR walk-in registration,DENY,DENY,DENY,DENY,ALLOW,Rate-limited; capacity; duplicate phone,FR-QUE-001..005,POST /api/public/clinics/:slug/walk-ins
+CAP-QUE-02,Queue,Staff walk-in registration (incl. capacity override),DENY,ALLOW,ALLOW,DENY,DENY,Override requires reason,FR-QUE-006,POST /api/queue/walk-ins
+CAP-QUE-13,Queue,No-phone staff walk-in exception,DENY,ALLOW,ALLOW,DENY,DENY,Mandatory reason; no private link (FR-QUE-020),FR-QUE-020,POST /api/queue/walk-ins (noPhoneReason)
+CAP-QUE-03,Queue,Confirm arrival (REGISTERED → WAITING),DENY,ALLOW,ALLOW,DENY,DENY,,FR-QUE-007,POST /api/queue/entries/:id/confirm-arrival
+CAP-QUE-04,Queue,View clinic-wide queue,DENY,ALLOW,ALLOW,DENY,DENY,,FR-QUE-008,GET /api/queue/today
+CAP-QUE-05,Queue,View doctor queue,DENY,ALLOW,ALLOW,ALLOW_OWN,DENY,,FR-QUE-008,GET /api/queue/today?doctorId=
+CAP-QUE-06,Queue,Call next / call specific,DENY,ALLOW,DENY,ALLOW_OWN,DENY,RC denied pending OQ-013,FR-QUE-009,POST /api/queue/doctors/:doctorId/call-next; POST /api/queue/entries/:id/call
+CAP-QUE-07,Queue,Start / complete consultation,DENY,ALLOW,DENY,ALLOW_OWN,DENY,,FR-QUE-010,POST /api/queue/entries/:id/{start|complete}
+CAP-QUE-08,Queue,Return CALLED to waiting; mark queue no-show,DENY,ALLOW,ALLOW,ALLOW_OWN,DENY,,FR-QUE-011,POST /api/queue/entries/:id/{return-to-waiting|no-show}
+CAP-QUE-09,Queue,Cancel queue entry,DENY,ALLOW,ALLOW,DENY,ALLOW_OWN_TOKEN,PP: leave (REGISTERED/WAITING),"FR-QUE-011, -015",POST /api/queue/entries/:id/cancel; POST /api/public/queue-entry/leave
+CAP-QUE-10,Queue,Reassign entry to another doctor,DENY,ALLOW,ALLOW,DENY,DENY,,FR-QUE-019,POST /api/queue/entries/:id/reassign
+CAP-QUE-11,Queue,Launch waiting-room display,DENY,ALLOW,ALLOW,DENY,DENY,Issues DISPLAY key,FR-QUE-017,/api/clinic/display-keys
+CAP-QUE-12,Queue,View own live status page,DENY,DENY,DENY,DENY,ALLOW_OWN_TOKEN,,FR-QUE-014,GET /api/public/queue-entry; GET /api/public/stream
+CAP-PAT-01,"Patients, reports, audit",Search patients; view visit history,DENY,ALLOW,ALLOW,ALLOW_OWN,DENY,DR: patients in own queue/appointments,"FR-PAT-003, -005",GET /api/patients; GET /api/search
+CAP-PAT-02,"Patients, reports, audit",Correct patient name/phone,DENY,ALLOW,ALLOW,DENY,DENY,"Audited, masked",FR-PAT-004,PATCH /api/patients/:id
+CAP-PAT-03,"Patients, reports, audit",Anonymise patient,DENY,ALLOW,DENY,DENY,DENY,SHOULD (SRS 14.4),Section 14.4,POST /api/patients/:id/anonymize
+CAP-RPT-01,"Patients, reports, audit",Today dashboard,DENY,ALLOW,ALLOW,ALLOW_OWN,DENY,,FR-RPT-001,GET /api/reports/today
+CAP-RPT-02,"Patients, reports, audit",Date-range reports and CSV export,DENY,ALLOW,DENY,DENY,DENY,RC denied pending OQ-014,FR-RPT-002..005,GET /api/reports/summary[.csv]
+CAP-AUD-01,"Patients, reports, audit",View clinic audit log,DENY,ALLOW,DENY,DENY,DENY,,FR-AUD-004,GET /api/audit
+CAP-AUD-02,"Patients, reports, audit",View platform audit log,ALLOW,DENY,DENY,DENY,DENY,,FR-AUD-004,GET /api/platform/audit
+CAP-STF-01,Account,Change own password,ALLOW,ALLOW,ALLOW,ALLOW,DENY,All staff,FR-STF-006,POST /api/auth/change-password
+CAP-STF-02,Account,Select / switch active clinic,DENY,ALLOW_OWN,ALLOW_OWN,ALLOW_OWN,DENY,Only clinics where the user holds an active membership; permissions then come from that membership only,"FR-STF-007, FR-SEC-012",POST /api/auth/select-clinic; GET /api/auth/me

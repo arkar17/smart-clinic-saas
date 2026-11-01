@@ -1,0 +1,48 @@
+// Arch 15 error codes (SC-1 subset plus codes later gates reuse) and the error envelope (Arch 14.1).
+export const ERROR_STATUS = {
+  BAD_REQUEST: 400,
+  UNAUTHENTICATED: 401,
+  FORBIDDEN: 403,
+  CSRF_INVALID: 403,
+  PASSWORD_CHANGE_REQUIRED: 403,
+  CLINIC_READ_ONLY: 403,
+  CLINIC_SELECTION_REQUIRED: 403,
+  NO_ACTIVE_MEMBERSHIP: 403,
+  NOT_FOUND: 404,
+  CLINIC_CONTEXT_MISMATCH: 409,
+  VERSION_CONFLICT: 409,
+  INVALID_TRANSITION: 409,
+  SETUP_INCOMPLETE: 409,
+  LAST_CLINIC_ADMIN: 409,
+  SERVICE_NOT_BOOKABLE: 409,
+  SLOT_UNAVAILABLE: 409,
+  DOCTOR_BUSY: 409,
+  CAPACITY_REACHED: 409,
+  REGISTRATION_CLOSED: 409,
+  DUPLICATE_ACTIVE_REGISTRATION: 409,
+  OVERRIDE_REASON_REQUIRED: 409,
+  RECALL_LIMIT_REACHED: 409,
+  BOOKING_LIMIT_REACHED: 409,
+  CANCELLATION_CUTOFF_PASSED: 409,
+  REQUEST_IN_PROGRESS: 409,
+  HOLD_EXPIRED: 410,
+  IDEMPOTENCY_KEY_REUSED: 422,
+  DOCTOR_NOT_ELIGIBLE: 409,
+  VALIDATION_ERROR: 422,
+  RATE_LIMITED: 429,
+  ACCOUNT_LOCKED: 429,
+  INTERNAL: 500,
+} as const;
+export type ErrorCode = keyof typeof ERROR_STATUS;
+
+export interface ErrorEnvelope {
+  error: {
+    code: ErrorCode;
+    message: string;
+    fields?: Record<string, string[]>;
+    details?: unknown;
+    requestId: string;
+    retryAfterSec?: number;
+    current?: { status?: string; version: number };
+  };
+}
